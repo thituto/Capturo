@@ -2,7 +2,9 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- 10.0.19041: libera as APIs do Windows usadas no OCR (Windows.Media.Ocr) e na gravação de vídeo. -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
@@ -26,6 +28,11 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Capturo.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Leitura de QR Code e outros códigos de barras. -->
+    <PackageReference Include="ZXing.Net" Version="0.16.9" />
   </ItemGroup>
 
 </Project>

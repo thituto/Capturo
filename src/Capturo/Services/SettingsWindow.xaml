@@ -1,0 +1,62 @@
+<Window x:Class="Capturo.Services.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Configurações — Capturo"
+        Width="720" Height="760" MinWidth="600" MinHeight="500"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource WindowBackground}"
+        Foreground="{StaticResource PrimaryText}"
+        FontSize="13">
+    <DockPanel Margin="20">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Content="Restaurar padrões" Click="Defaults_Click" Margin="0,0,8,0" />
+            <Button Content="Cancelar" IsCancel="True" Click="Cancel_Click" Margin="0,0,8,0" />
+            <Button Content="Salvar" IsDefault="True" Click="Save_Click" Background="{StaticResource Accent}" />
+        </StackPanel>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <TextBlock Text="Atalhos" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBlock Text="Clique num campo e pressione a combinação desejada. Backspace deixa a ação sem atalho."
+                           Foreground="{StaticResource SecondaryText}" TextWrapping="Wrap" Margin="0,0,0,10" />
+                <Grid x:Name="HotkeyGrid">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="200" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                </Grid>
+
+                <TextBlock Text="Depois de capturar" FontSize="17" FontWeight="SemiBold" Margin="0,22,0,8" />
+                <CheckBox x:Name="CopyBox" Content="Copiar para a área de transferência" Margin="0,3" />
+                <CheckBox x:Name="AutoSaveBox" Content="Salvar automaticamente na pasta de capturas" Margin="0,3" />
+                <CheckBox x:Name="EditorBox" Content="Abrir o editor" Margin="0,3" />
+
+                <TextBlock Text="Pasta das capturas" FontSize="17" FontWeight="SemiBold" Margin="0,22,0,8" />
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Escolher…" Click="Browse_Click" Margin="8,0,0,0" />
+                    <TextBox x:Name="FolderBox" VerticalContentAlignment="Center" Padding="6,4" />
+                </DockPanel>
+
+                <TextBlock Text="Vídeo" FontSize="17" FontWeight="SemiBold" Margin="0,22,0,8" />
+                <StackPanel Orientation="Horizontal" Margin="0,3">
+                    <TextBlock Text="Quadros por segundo:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <Slider x:Name="FpsSlider" Width="160" Minimum="5" Maximum="60" IsSnapToTickEnabled="True" TickFrequency="5"
+                            VerticalAlignment="Center" ValueChanged="FpsSlider_ValueChanged" />
+                    <TextBlock x:Name="FpsValue" VerticalAlignment="Center" Margin="8,0,0,0" />
+                </StackPanel>
+                <CheckBox x:Name="CursorBox" Content="Mostrar o cursor do mouse" Margin="0,3" />
+                <CheckBox x:Name="ClicksBox" Content="Destacar os cliques (amarelo: esquerdo, vermelho: direito)" Margin="0,3" />
+
+                <TextBlock Text="Geral" FontSize="17" FontWeight="SemiBold" Margin="0,22,0,8" />
+                <StackPanel Orientation="Horizontal" Margin="0,3">
+                    <TextBlock Text="Atraso da captura com atraso:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <Slider x:Name="DelaySlider" Width="160" Minimum="1" Maximum="10" IsSnapToTickEnabled="True" TickFrequency="1"
+                            VerticalAlignment="Center" ValueChanged="DelaySlider_ValueChanged" />
+                    <TextBlock x:Name="DelayValue" VerticalAlignment="Center" Margin="8,0,0,0" />
+                </StackPanel>
+                <CheckBox x:Name="StartupBox" Content="Iniciar o Capturo junto com o Windows" Margin="0,6" />
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

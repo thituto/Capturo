@@ -58,11 +58,14 @@ public class EditorModelTests
         Annotation[] items =
         {
             new ArrowAnnotation(new Point(0, 0), new Point(20, 0), Red, 4),
-            new RectangleAnnotation(new Rect(0, 0, 20, 20), Red, 4),
+            new RectangleAnnotation(new Rect(0, 0, 20, 20), Red, 4, ShapeStyle.Default),
             new PenAnnotation(ImmutableArray.Create(new Point(0, 0), new Point(5, 5)), Red, 4, false),
-            new TextAnnotation(new Point(0, 0), "Oi", Red, 22),
+            new TextAnnotation(new Point(0, 0), "Oi", Red, 22, false),
             new StepAnnotation(new Point(0, 0), 1, Red, 30),
             new PixelateAnnotation(new Rect(0, 0, 20, 20)),
+            new SpotlightAnnotation(new Rect(0, 0, 20, 20), 0.6, false),
+            new MagnifierAnnotation(new Rect(0, 0, 20, 20), new Rect(40, 0, 40, 40), Red, 2),
+            new CalloutAnnotation(new Rect(0, 0, 80, 40), new Point(10, 70), "Olá", Red, 22),
         };
 
         foreach (var item in items)
@@ -87,6 +90,56 @@ public class EditorModelTests
         // A pixelização não tem cor nem espessura: continua a mesma.
         var pixelate = new PixelateAnnotation(new Rect(0, 0, 1, 1));
         Assert.Same(pixelate, pixelate.WithColor(Colors.Blue).WithSize(8));
+    }
+
+    [Fact]
+    public void Rectangle_handles_resize_from_any_side_and_normalize()
+    {
+        var rect = new RectangleAnnotation(new Rect(10, 10, 100, 50), Red, 4, ShapeStyle.Default);
+
+        var wider = (RectangleAnnotation)rect.MoveHandle(3, new Point(150, 999)); // lado direito: só muda X
+        Assert.Equal(new Rect(10, 10, 140, 50), wider.Rect);
+
+        var flipped = (RectangleAnnotation)rect.MoveHandle(0, new Point(200, 100)); // canto passa do oposto
+        Assert.Equal(new Rect(110, 60, 90, 40), flipped.Rect);
+    }
+
+    [Fact]
+    public void Arrow_handles_are_its_two_ends()
+    {
+        var arrow = new ArrowAnnotation(new Point(0, 0), new Point(50, 0), Red, 4);
+        var moved = (ArrowAnnotation)arrow.MoveHandle(1, new Point(80, 30));
+
+        Assert.Equal(2, arrow.Handles.Count);
+        Assert.Equal(new Point(0, 0), moved.Start);
+        Assert.Equal(new Point(80, 30), moved.End);
+        Assert.True(arrow.HitTest(new Point(25, 3)));
+        Assert.False(arrow.HitTest(new Point(25, 40)));
+    }
+
+    [Fact]
+    public void Magnifier_moves_only_the_part_that_was_grabbed()
+    {
+        var lens = new MagnifierAnnotation(new Rect(0, 0, 20, 20), new Rect(100, 0, 40, 40), Red, 2);
+        var delta = new Vector(5, 5);
+
+        var targetMoved = (MagnifierAnnotation)lens.OffsetAt(new Point(110, 10), delta);
+        var sourceMoved = (MagnifierAnnotation)lens.OffsetAt(new Point(10, 10), delta);
+
+        Assert.Equal(lens.Source, targetMoved.Source);
+        Assert.Equal(new Rect(105, 5, 40, 40), targetMoved.Target);
+        Assert.Equal(new Rect(5, 5, 20, 20), sourceMoved.Source);
+        Assert.Equal(lens.Target, sourceMoved.Target);
+    }
+
+    [Fact]
+    public void Spotlight_style_maps_opacity_to_how_dark_the_outside_gets()
+    {
+        var spot = new SpotlightAnnotation(new Rect(0, 0, 10, 10), 0.6, false);
+        var darker = (SpotlightAnnotation)spot.WithStyle(new ShapeStyle(false, 0.8, true));
+
+        Assert.Equal(0.8, darker.Dim, 6);
+        Assert.True(darker.Rounded);
     }
 
     [Fact]

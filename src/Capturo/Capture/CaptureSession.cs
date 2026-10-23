@@ -5,17 +5,21 @@ using System.Windows.Media.Imaging;
 
 namespace Capturo.Capture;
 
-public enum CaptureMode
+/// <summary>Para que serve a seleção: muda o texto de ajuda e o que um clique faz.</summary>
+public enum SelectionPurpose
 {
-    Region,
-    CurrentMonitor,
-    AllMonitors,
+    Screenshot,
+    TextRecognition,
+    QrCode,
+    ColorPicker,
+    Scrolling,
+    Video,
 }
 
-/// <summary>Resultado de uma captura: uma imagem, uma cor copiada pelo conta-gotas, ou nada (cancelada).</summary>
-public sealed record CaptureResult(BitmapSource? Image, Color? PickedColor)
+/// <summary>Resultado de uma seleção: a imagem e a área escolhida, uma cor (conta-gotas), ou nada (cancelada).</summary>
+public sealed record CaptureResult(BitmapSource? Image, Color? PickedColor, PxRect? Area)
 {
-    public static readonly CaptureResult Cancelled = new(null, null);
+    public static readonly CaptureResult Cancelled = new(null, null, null);
 }
 
 /// <summary>
@@ -30,6 +34,7 @@ public sealed class CaptureSession
     private readonly PxRect _virtual;
     private readonly IReadOnlyList<PxRect> _monitors;
     private readonly IReadOnlyList<WindowInfo> _windows;
+    private readonly SelectionPurpose _purpose;
     private readonly List<OverlayWindow> _overlays = new();
     private readonly TaskCompletionSource<CaptureResult> _completion = new();
 
@@ -40,36 +45,41 @@ public sealed class CaptureSession
     private bool _finished;
 
     private CaptureSession(BitmapSource desktop, PxRect virtualScreen, IReadOnlyList<PxRect> monitors,
-        IReadOnlyList<WindowInfo> windows)
+        IReadOnlyList<WindowInfo> windows, SelectionPurpose purpose)
     {
         _desktop = desktop;
         _virtual = virtualScreen;
         _monitors = monitors;
         _windows = windows;
+        _purpose = purpose;
     }
 
-    public static Task<CaptureResult> CaptureAsync(CaptureMode mode)
+    /// <summary>Congela a tela e deixa o usuário escolher uma região, janela ou monitor.</summary>
+    public static Task<CaptureResult> SelectAsync(SelectionPurpose purpose = SelectionPurpose.Screenshot)
     {
-        switch (mode)
-        {
-            case CaptureMode.AllMonitors:
-                return Task.FromResult(new CaptureResult(ScreenGrabber.Grab(ScreenGrabber.VirtualScreen), null));
-            case CaptureMode.CurrentMonitor:
-                var monitor = ScreenGrabber.MonitorAt(ScreenGrabber.CursorPosition);
-                return Task.FromResult(new CaptureResult(ScreenGrabber.Grab(monitor), null));
-        }
-
         // A lista de janelas e a imagem são tiradas antes de qualquer overlay aparecer.
         var windows = WindowFinder.GetVisibleWindows();
         var virtualScreen = ScreenGrabber.VirtualScreen;
         var desktop = ScreenGrabber.Grab(virtualScreen);
-        var session = new CaptureSession(desktop, virtualScreen, ScreenGrabber.Monitors, windows);
+        var session = new CaptureSession(desktop, virtualScreen, ScreenGrabber.Monitors, windows, purpose);
         session.Open();
         return session._completion.Task;
     }
 
     internal BitmapSource Desktop => _desktop;
     internal PxRect Virtual => _virtual;
+
+    internal string Hint => _purpose switch
+    {
+        SelectionPurpose.TextRecognition => "Selecione o texto a reconhecer · clique numa janela · Esc: cancelar",
+        SelectionPurpose.QrCode => "Selecione o QR Code ou código de barras · Esc: cancelar",
+        SelectionPurpose.ColorPicker => "Clique na cor que quer copiar · Esc: cancelar",
+        SelectionPurpose.Scrolling => "Selecione a área que rola (ou clique na janela) · Esc durante a rolagem encerra",
+        SelectionPurpose.Video => "Selecione a área a gravar · clique numa janela · Enter: monitor inteiro · Esc: cancelar",
+        _ => "Arraste para selecionar · clique numa janela · Enter: monitor · A: todas as telas · C: copiar cor · Esc: cancelar",
+    };
+
+    internal bool PicksColorOnly => _purpose == SelectionPurpose.ColorPicker;
 
     private void Open()
     {
@@ -90,6 +100,11 @@ public sealed class CaptureSession
     internal void PointerDown()
     {
         _cursor = ScreenGrabber.CursorPosition;
+        if (PicksColorOnly)
+        {
+            Finish(new CaptureResult(null, ColorUnderCursor(), null));
+            return;
+        }
         _dragStart = _cursor;
         _dragging = false;
         Refresh();
@@ -152,13 +167,14 @@ public sealed class CaptureSession
                 break;
             case Key.Enter:
             case Key.Space:
-                FinishWithArea(MonitorUnderCursor());
+                if (!PicksColorOnly)
+                    FinishWithArea(MonitorUnderCursor());
                 break;
-            case Key.A:
+            case Key.A when _purpose == SelectionPurpose.Screenshot:
                 FinishWithArea(_virtual);
                 break;
-            case Key.C:
-                Finish(new CaptureResult(null, ColorUnderCursor()));
+            case Key.C when _purpose is SelectionPurpose.Screenshot or SelectionPurpose.ColorPicker:
+                Finish(new CaptureResult(null, ColorUnderCursor(), null));
                 break;
         }
     }
@@ -182,7 +198,7 @@ public sealed class CaptureSession
         if (_finished)
             return;
         var state = new OverlayState(
-            Highlight: _dragging ? _selection : HoverArea(),
+            Highlight: PicksColorOnly ? default : _dragging ? _selection : HoverArea(),
             Cursor: _cursor,
             Dragging: _dragging,
             CursorColor: ColorUnderCursor());
@@ -199,7 +215,7 @@ public sealed class CaptureSession
             return;
         }
         var image = BitmapUtil.Crop(_desktop, new Int32Rect(area.X - _virtual.X, area.Y - _virtual.Y, area.Width, area.Height));
-        Finish(new CaptureResult(image, null));
+        Finish(new CaptureResult(image, null, area));
     }
 
     private void Finish(CaptureResult result)

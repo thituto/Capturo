@@ -2,47 +2,73 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Capturo"
-        Width="1100" Height="760" MinWidth="720" MinHeight="420"
+        Width="1180" Height="800" MinWidth="760" MinHeight="460"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource WindowBackground}"
         UseLayoutRounding="True">
     <DockPanel>
-        <!-- Barra de ferramentas -->
+        <!-- Ferramentas e ações -->
         <Border DockPanel.Dock="Top" Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource PanelBorder}" BorderThickness="0,0,0,1">
-            <WrapPanel Margin="8,6">
-                <StackPanel x:Name="ToolPanel" Orientation="Horizontal">
-                    <ToggleButton Tag="Select" ToolTip="Selecionar e mover (V)" Content="↖ Mover" />
-                    <ToggleButton Tag="Arrow" ToolTip="Seta (A)" Content="➜ Seta" />
-                    <ToggleButton Tag="Rectangle" ToolTip="Retângulo (R) · Shift: quadrado" Content="▭ Retângulo" />
-                    <ToggleButton Tag="Ellipse" ToolTip="Elipse (E) · Shift: círculo" Content="◯ Elipse" />
-                    <ToggleButton Tag="Line" ToolTip="Linha (L) · Shift: ângulos de 45°" Content="╱ Linha" />
-                    <ToggleButton Tag="Pen" ToolTip="Caneta (P)" Content="✎ Caneta" />
-                    <ToggleButton Tag="Highlighter" ToolTip="Marca-texto (H)" Content="▌ Marca-texto" />
-                    <ToggleButton Tag="Text" ToolTip="Texto (T) · Enter confirma, Shift+Enter quebra a linha" Content="T Texto" />
-                    <ToggleButton Tag="Step" ToolTip="Passo numerado (N)" Content="① Passo" />
-                    <ToggleButton Tag="Pixelate" ToolTip="Pixelizar dados sensíveis (B)" Content="▦ Ocultar" />
-                    <ToggleButton Tag="Crop" ToolTip="Recortar (C)" Content="⛶ Recortar" />
-                </StackPanel>
+            <StackPanel Margin="8,6,8,4">
+                <WrapPanel>
+                    <StackPanel x:Name="ToolPanel" Orientation="Horizontal">
+                        <ToggleButton Tag="Select" ToolTip="Selecionar, mover e redimensionar (V)" Content="↖ Mover" />
+                        <ToggleButton Tag="Arrow" ToolTip="Seta (A)" Content="➜ Seta" />
+                        <ToggleButton Tag="Rectangle" ToolTip="Retângulo (R) · Shift: quadrado" Content="▭ Retângulo" />
+                        <ToggleButton Tag="Ellipse" ToolTip="Elipse (E) · Shift: círculo" Content="◯ Elipse" />
+                        <ToggleButton Tag="Line" ToolTip="Linha (L) · Shift: ângulos de 45°" Content="╱ Linha" />
+                        <ToggleButton Tag="Pen" ToolTip="Caneta (P)" Content="✎ Caneta" />
+                        <ToggleButton Tag="Highlighter" ToolTip="Marca-texto (H)" Content="▌ Marca-texto" />
+                        <ToggleButton Tag="Text" ToolTip="Texto (T) · Enter confirma, Shift+Enter quebra a linha · duplo clique edita" Content="T Texto" />
+                        <ToggleButton Tag="Callout" ToolTip="Balão de texto (K) · arraste a ponta pela alça" Content="💬 Balão" />
+                        <ToggleButton Tag="Step" ToolTip="Passo numerado (N)" Content="① Passo" />
+                        <ToggleButton Tag="Spotlight" ToolTip="Destaque (S): escurece tudo fora da área · a opacidade controla o escuro" Content="◳ Destaque" />
+                        <ToggleButton Tag="Magnifier" ToolTip="Lupa (M): amplia a área marcada" Content="🔍 Lupa" />
+                        <ToggleButton Tag="Pixelate" ToolTip="Pixelizar dados sensíveis (B)" Content="▦ Ocultar" />
+                        <ToggleButton Tag="Crop" ToolTip="Recortar (C)" Content="⛶ Recortar" />
+                    </StackPanel>
+                </WrapPanel>
 
-                <Rectangle Width="1" Margin="8,4" Fill="{StaticResource PanelBorder}" />
+                <WrapPanel Margin="0,4,0,0">
+                    <StackPanel x:Name="ColorPanel" Orientation="Horizontal" VerticalAlignment="Center" />
 
-                <StackPanel x:Name="ColorPanel" Orientation="Horizontal" VerticalAlignment="Center" />
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+                        <TextBlock Text="Tamanho" Foreground="{StaticResource SecondaryText}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <Slider x:Name="SizeSlider" Width="90" Minimum="1" Maximum="12" Value="4" IsSnapToTickEnabled="True"
+                                TickFrequency="1" VerticalAlignment="Center" ValueChanged="SizeSlider_ValueChanged" />
+                        <TextBlock x:Name="SizeValue" Width="20" Foreground="{StaticResource PrimaryText}" VerticalAlignment="Center" Margin="6,0,0,0" />
+                    </StackPanel>
 
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
-                    <TextBlock Text="Tamanho" Foreground="{StaticResource SecondaryText}" VerticalAlignment="Center" Margin="0,0,6,0" />
-                    <Slider x:Name="SizeSlider" Width="110" Minimum="1" Maximum="12" Value="4" IsSnapToTickEnabled="True"
-                            TickFrequency="1" VerticalAlignment="Center" ValueChanged="SizeSlider_ValueChanged" />
-                    <TextBlock x:Name="SizeValue" Width="22" Foreground="{StaticResource PrimaryText}" VerticalAlignment="Center" Margin="6,0,0,0" />
-                </StackPanel>
+                    <ToggleButton x:Name="FillToggle" Content="■ Preencher" ToolTip="Formas e texto com fundo preenchido" Click="StyleToggle_Click" />
+                    <ToggleButton x:Name="RoundToggle" Content="▢ Arredondado" ToolTip="Cantos arredondados em retângulos e destaques" Click="StyleToggle_Click" />
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0">
+                        <TextBlock Text="Opacidade" Foreground="{StaticResource SecondaryText}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <Slider x:Name="OpacitySlider" Width="80" Minimum="10" Maximum="100" Value="100" IsSnapToTickEnabled="True"
+                                TickFrequency="5" VerticalAlignment="Center" ValueChanged="OpacitySlider_ValueChanged" />
+                        <TextBlock x:Name="OpacityValue" Width="36" Foreground="{StaticResource PrimaryText}" VerticalAlignment="Center" Margin="6,0,0,0" />
+                    </StackPanel>
 
-                <Rectangle Width="1" Margin="8,4" Fill="{StaticResource PanelBorder}" />
+                    <Rectangle Width="1" Margin="8,4" Fill="{StaticResource PanelBorder}" />
 
-                <Button x:Name="UndoButton" Content="↶ Desfazer" ToolTip="Ctrl+Z" Click="Undo_Click" />
-                <Button x:Name="RedoButton" Content="↷ Refazer" ToolTip="Ctrl+Y" Click="Redo_Click" />
-                <Button Content="⧉ Copiar" ToolTip="Ctrl+C" Click="Copy_Click" />
-                <Button Content="💾 Salvar" ToolTip="Ctrl+S" Click="Save_Click" />
-                <Button Content="Salvar como…" ToolTip="Ctrl+Shift+S" Click="SaveAs_Click" />
-            </WrapPanel>
+                    <TextBlock Text="Imagem" Foreground="{StaticResource SecondaryText}" VerticalAlignment="Center" Margin="2,0,4,0" />
+                    <ToggleButton x:Name="BorderToggle" Content="▣ Borda" ToolTip="Borda em volta da captura" Click="Effects_Changed" />
+                    <Button x:Name="BorderColorButton" ToolTip="Cor da borda" Click="BorderColorButton_Click" Padding="6,4">
+                        <Ellipse x:Name="BorderColorSwatch" Width="14" Height="14" Stroke="#55FFFFFF" StrokeThickness="1" />
+                    </Button>
+                    <Button x:Name="BorderWidthButton" ToolTip="Espessura da borda" Click="BorderWidthButton_Click" />
+                    <ToggleButton x:Name="ShadowToggle" Content="❒ Sombra" ToolTip="Sombra projetada (o PNG ganha margem transparente)" Click="Effects_Changed" />
+                    <ToggleButton x:Name="CornersToggle" Content="◜ Cantos" ToolTip="Cantos arredondados na imagem" Click="Effects_Changed" />
+                    <Button x:Name="TornButton" ToolTip="Borda rasgada" Click="TornButton_Click" />
+
+                    <Rectangle Width="1" Margin="8,4" Fill="{StaticResource PanelBorder}" />
+
+                    <Button x:Name="UndoButton" Content="↶ Desfazer" ToolTip="Ctrl+Z" Click="Undo_Click" />
+                    <Button x:Name="RedoButton" Content="↷ Refazer" ToolTip="Ctrl+Y" Click="Redo_Click" />
+                    <Button Content="⧉ Copiar" ToolTip="Ctrl+C" Click="Copy_Click" />
+                    <Button Content="💾 Salvar" ToolTip="Ctrl+S" Click="Save_Click" />
+                    <Button Content="Salvar como…" ToolTip="Ctrl+Shift+S" Click="SaveAs_Click" />
+                </WrapPanel>
+            </StackPanel>
         </Border>
 
         <!-- Barra de status -->
@@ -56,22 +82,25 @@
         <!-- Área de edição -->
         <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                       Background="{StaticResource CanvasBackground}" PreviewMouseWheel="Scroller_PreviewMouseWheel">
-            <Grid x:Name="Surface" Margin="24" HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="True">
+            <Grid x:Name="Stage" Margin="40" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Grid.LayoutTransform>
                     <ScaleTransform x:Name="ZoomTransform" />
                 </Grid.LayoutTransform>
-                <Canvas x:Name="ContentCanvas">
-                    <Canvas.RenderTransform>
-                        <TranslateTransform x:Name="CropShift" />
-                    </Canvas.RenderTransform>
-                    <Image x:Name="BaseImage" Stretch="Fill" />
-                    <Canvas x:Name="AnnotationLayer" IsHitTestVisible="False" />
-                    <Canvas x:Name="PreviewLayer" IsHitTestVisible="False" />
-                    <Canvas x:Name="SelectionLayer" IsHitTestVisible="False" />
-                    <Canvas x:Name="InputLayer" Background="Transparent"
-                            MouseLeftButtonDown="Input_MouseDown" MouseMove="Input_MouseMove"
-                            MouseLeftButtonUp="Input_MouseUp" />
-                </Canvas>
+                <Canvas x:Name="ShadowHost" IsHitTestVisible="False" />
+                <Grid x:Name="Surface" ClipToBounds="True">
+                    <Canvas x:Name="ContentCanvas">
+                        <Canvas.RenderTransform>
+                            <TranslateTransform x:Name="CropShift" />
+                        </Canvas.RenderTransform>
+                        <Image x:Name="BaseImage" Stretch="Fill" />
+                        <Canvas x:Name="AnnotationLayer" IsHitTestVisible="False" />
+                        <Canvas x:Name="OverlayLayer" IsHitTestVisible="False" />
+                        <Canvas x:Name="InputLayer" Background="Transparent"
+                                MouseLeftButtonDown="Input_MouseDown" MouseMove="Input_MouseMove"
+                                MouseLeftButtonUp="Input_MouseUp" />
+                    </Canvas>
+                    <Canvas x:Name="BorderHost" IsHitTestVisible="False" />
+                </Grid>
             </Grid>
         </ScrollViewer>
     </DockPanel>

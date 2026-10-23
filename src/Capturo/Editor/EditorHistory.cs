@@ -3,10 +3,10 @@ using System.Windows;
 
 namespace Capturo.Editor;
 
-/// <summary>Estado completo do documento: as anotações e o recorte (null = imagem inteira).</summary>
-public sealed record EditorState(ImmutableList<Annotation> Items, Int32Rect? Crop)
+/// <summary>Estado completo do documento: anotações, recorte (null = imagem inteira) e efeitos da imagem.</summary>
+public sealed record EditorState(ImmutableList<Annotation> Items, Int32Rect? Crop, ImageEffects Effects)
 {
-    public static readonly EditorState Empty = new(ImmutableList<Annotation>.Empty, null);
+    public static readonly EditorState Empty = new(ImmutableList<Annotation>.Empty, null, ImageEffects.None);
 
     public int NextStepNumber => Items.OfType<StepAnnotation>().Select(s => s.Number).DefaultIfEmpty(0).Max() + 1;
 }
@@ -17,7 +17,12 @@ public sealed class EditorHistory
     private readonly Stack<EditorState> _undo = new();
     private readonly Stack<EditorState> _redo = new();
 
-    public EditorState Current { get; private set; } = EditorState.Empty;
+    public EditorHistory(EditorState? initial = null)
+    {
+        Current = initial ?? EditorState.Empty;
+    }
+
+    public EditorState Current { get; private set; }
     public bool CanUndo => _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0;
 

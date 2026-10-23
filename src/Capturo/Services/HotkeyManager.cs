@@ -33,6 +33,14 @@ public sealed class HotkeyManager : IDisposable
         return true;
     }
 
+    /// <summary>Remove todos os atalhos (antes de reaplicar as configurações ou enquanto o usuário grava um novo).</summary>
+    public void Clear()
+    {
+        foreach (int id in _handlers.Keys)
+            UnregisterHotKey(_source.Handle, id);
+        _handlers.Clear();
+    }
+
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if (msg == WM_HOTKEY && _handlers.TryGetValue(wParam.ToInt32(), out var handler))
@@ -45,9 +53,7 @@ public sealed class HotkeyManager : IDisposable
 
     public void Dispose()
     {
-        foreach (int id in _handlers.Keys)
-            UnregisterHotKey(_source.Handle, id);
-        _handlers.Clear();
+        Clear();
         _source.Dispose();
     }
 }

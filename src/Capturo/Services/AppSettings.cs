@@ -24,6 +24,39 @@ public sealed class AppSettings
 
     public bool FirstRunTipShown { get; set; }
 
+    /// <summary>Últimos efeitos de imagem usados no editor (borda, sombra...), aplicados às próximas capturas.</summary>
+    public EffectsSettings Effects { get; set; } = new();
+
+    /// <summary>Última região capturada, em pixels físicos da tela virtual (para "Capturar última região").</summary>
+    public int[]? LastRegion { get; set; }
+
+    /// <summary>Segundos de espera da captura com atraso.</summary>
+    public int DelaySeconds { get; set; } = 3;
+
+    public int VideoFramesPerSecond { get; set; } = 20;
+    public bool VideoCaptureCursor { get; set; } = true;
+    public bool VideoHighlightClicks { get; set; } = true;
+
+    /// <summary>Atalhos personalizados (nome da ação → "Win+Shift+W"; texto vazio = sem atalho). Ação ausente usa o padrão.</summary>
+    public Dictionary<string, string> Hotkeys { get; set; } = new();
+
+    public Hotkey GetHotkey(HotkeyAction action) =>
+        Hotkeys.TryGetValue(action.ToString(), out var text)
+            ? Hotkey.Parse(text)
+            : Hotkey.Defaults.GetValueOrDefault(action, Hotkey.None);
+
+    public void SetHotkey(HotkeyAction action, Hotkey hotkey) => Hotkeys[action.ToString()] = hotkey.ToString();
+
+    public sealed class EffectsSettings
+    {
+        public bool Border { get; set; }
+        public string BorderColor { get; set; } = "#9CA3AF";
+        public double BorderWidth { get; set; } = 2;
+        public bool Shadow { get; set; }
+        public bool RoundedCorners { get; set; }
+        public string Torn { get; set; } = "None";
+    }
+
     public static AppSettings Load()
     {
         try

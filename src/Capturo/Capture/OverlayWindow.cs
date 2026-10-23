@@ -114,7 +114,7 @@ internal sealed class OverlayWindow : Window
             {
                 Foreground = Brushes.White,
                 FontSize = 13,
-                Text = "Arraste para selecionar · clique numa janela · Enter: monitor · A: todas as telas · C: copiar cor · Esc: cancelar",
+                Text = session.Hint,
             },
         };
 

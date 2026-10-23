@@ -61,6 +61,18 @@
             </Setter>
         </Style>
 
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#1E1E22" />
+            <Setter Property="Foreground" Value="{StaticResource PrimaryText}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PanelBorder}" />
+            <Setter Property="CaretBrush" Value="{StaticResource PrimaryText}" />
+            <Setter Property="SelectionBrush" Value="{StaticResource Accent}" />
+        </Style>
+
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource PrimaryText}" />
+        </Style>
+
         <Style x:Key="SwatchButton" TargetType="Button">
             <Setter Property="Width" Value="22" />
             <Setter Property="Height" Value="22" />

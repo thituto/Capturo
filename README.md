@@ -1,33 +1,36 @@
 # Capturo
 
-Captura de tela para Windows com editor de anotações. Feito em C# / .NET 8 / WPF, sem dependências de runtime além do .NET Desktop Runtime 8.
+Captura de tela e gravação de vídeo para Windows, com editor de anotações. Feito em C# / .NET 8 / WPF.
 
-## O que faz (v0.1)
+## Capturas
 
-- **Seleção sobre a tela congelada**, uma janela de overlay por monitor, em pixels físicos (per-monitor DPI v2, monitores com escalas diferentes e coordenadas negativas).
-- **Detecção de janelas**: passe o mouse e clique para capturar a janela inteira (usa a moldura real do DWM, sem a borda invisível do Windows 11).
-- **Lupa** com pixel central, cor em hex e coordenadas; **C** copia a cor.
-- **Editor**: seta, retângulo, elipse, linha, caneta, marca-texto, texto, passos numerados, pixelização de dados sensíveis e recorte. Mover, recolorir e redimensionar itens, desfazer/refazer ilimitado, zoom 1:1 com pixels físicos.
-- **Saída**: salva automaticamente em `Imagens\Capturo`, copia para a área de transferência (bitmap + PNG) e exporta PNG/JPEG.
+| Ação | Atalho padrão |
+| --- | --- |
+| Capturar região (seleção sobre a tela congelada, clique numa janela, Enter = monitor) | **Win+Shift+W** |
+| Capturar região (alternativo) | Print |
+| Capturar a última região | Shift+Print |
+| Capturar tela cheia (monitor do cursor) | Ctrl+Alt+Shift+Print |
+| Capturar todas as telas · janela ativa · com atraso · com rolagem automática | menu da bandeja (atalho opcional) |
+| Reconhecer texto (OCR do Windows) · ler QR Code/código de barras · seletor de cor | menu da bandeja (atalho opcional) |
+| Gravar vídeo da tela cheia / de uma região (o mesmo atalho para a gravação) | Ctrl+Print / Ctrl+Shift+Print |
 
-## Atalhos
+**Todos os atalhos são configuráveis** em *Configurações…* (menu da bandeja): clique no campo e pressione a combinação; Backspace deixa a ação sem atalho. Atalhos repetidos ou já usados por outro programa ficam marcados em vermelho.
 
-| Onde | Tecla | Ação |
-| --- | --- | --- |
-| Global | Print ou Ctrl+Alt+R | Capturar região |
-| Global | Shift+Print | Capturar o monitor atual |
-| Global | Ctrl+Print | Capturar todas as telas |
-| Seleção | Enter / Espaço | Monitor sob o cursor |
-| Seleção | A | Todas as telas |
-| Seleção | C | Copiar a cor sob o cursor |
-| Seleção | Esc ou botão direito | Cancelar |
-| Editor | V A R E L P H T N B C | Mover, Seta, Retângulo, Elipse, Linha, Caneta, Marca-texto, Texto, Passo, Ocultar, Recortar |
-| Editor | Shift ao desenhar | Quadrado/círculo, linhas a 45° |
-| Editor | Ctrl+Z / Ctrl+Y | Desfazer / refazer |
-| Editor | Ctrl+C / Ctrl+S / Ctrl+Shift+S | Copiar / salvar / salvar como |
-| Editor | Ctrl+roda, Ctrl+0, Ctrl+1 | Zoom, 100%, ajustar à janela |
+> Se o Screenpresso (ou outro capturador) estiver aberto, ele segura os mesmos atalhos e o Capturo avisa que estão em uso. Feche o outro programa ou escolha outras combinações.
 
-Se o Print abrir a Ferramenta de Captura do Windows, desative em Configurações › Acessibilidade › Teclado › "Usar a tecla Print Screen para abrir a captura de tela" (ou use Ctrl+Alt+R).
+Linha de comando: `Capturo.exe --action CaptureRegion` (qualquer ação da lista em `Services/Hotkey.cs`), `--capture`, `--settings`. Com o Capturo já aberto, o comando é repassado para ele.
+
+## Editor
+
+- **Ferramentas**: mover (V), seta (A), retângulo (R), elipse (E), linha (L), caneta (P), marca-texto (H), texto (T), balão de texto (K), passo numerado (N), **destaque** (S: escurece tudo fora da área), **lupa** (M: amplia uma área numa lente ao lado), ocultar/pixelizar (B), recortar (C).
+- **Tudo continua editável**: o item desenhado fica selecionado com alças para redimensionar; arraste para mover; setas do teclado ajustam (Shift = 10 px); duplo clique ou Enter reabre o texto; Delete apaga. Selecionar um item mostra o estilo dele na barra.
+- **Estilo**: 9 cores, tamanho, preenchimento, cantos arredondados e opacidade (no destaque, a opacidade controla o escuro em volta).
+- **Imagem**: borda liga/desliga com cor e espessura, sombra projetada, cantos arredondados e borda rasgada (embaixo, embaixo+direita ou todos os lados). A última escolha é lembrada.
+- Desfazer/refazer ilimitado, zoom 1:1 com pixels físicos, copiar (bitmap + PNG), salvar PNG/JPEG.
+
+## Vídeo
+
+MP4 (H.264) pelo codificador do Windows, com aceleração de hardware quando disponível. Desenha o cursor e destaca cliques (amarelo: esquerdo, vermelho: direito). Barra flutuante com tempo, pausar, parar e descartar; a moldura e a barra não aparecem no vídeo. Áreas maiores que 3840 × 2160 são reduzidas proporcionalmente. Ainda sem áudio.
 
 ## Compilar e rodar
 
@@ -37,28 +40,26 @@ O SDK foi instalado de forma portátil em `%LOCALAPPDATA%\dotnet-sdk` (sem admin
 $dn = "$env:LOCALAPPDATA\dotnet-sdk\dotnet.exe"
 & $dn build Capturo.sln
 & $dn test Capturo.sln
-& .\src\Capturo\bin\Debug\net8.0-windows\Capturo.exe            # fica na bandeja
-& .\src\Capturo\bin\Debug\net8.0-windows\Capturo.exe --capture  # já abre a seleção
+& .\src\Capturo\bin\Debug\net8.0-windows10.0.19041.0\Capturo.exe
 ```
 
-Publicar um executável único: `& $dn publish src\Capturo -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true`.
+Configurações e log ficam em `%APPDATA%\Capturo`; capturas em `Imagens\Capturo` (configurável).
 
 ## Estrutura
 
 ```
 src/Capturo
-  Capture/   ScreenGrabber (BitBlt da tela virtual), WindowFinder (EnumWindows + DWM),
-             CaptureSession (estado da seleção em pixels físicos), OverlayWindow (uma por monitor)
-  Editor/    Annotations (registros imutáveis), EditorHistory (desfazer por instantâneos),
-             AnnotationRenderer (anotação → WPF), EditorWindow
-  Services/  AppSettings (%APPDATA%\Capturo\settings.json), OutputService, HotkeyManager, TrayIcon, Log
-tests/Capturo.Tests   geometria, histórico, anotações e nomes de arquivo
+  Capture/   ScreenGrabber, WindowFinder, CaptureSession + OverlayWindow (seleção por monitor),
+             ScrollingCapture (rolagem + costura), Recognition (OCR e QR), janelas de contagem e resultado
+  Editor/    Annotations (registros imutáveis com alças), ImageEffects, EditorHistory, AnnotationRenderer, EditorWindow
+  Video/     VideoRecorder (BitBlt → MediaStreamSource → MediaTranscoder), moldura e barra de gravação
+  Services/  AppSettings, Hotkey/HotkeyManager/HotkeyBox, SettingsWindow, CommandChannel, OutputService, TrayIcon, Log
+tests/Capturo.Tests   geometria, anotações, histórico, atalhos, costura da rolagem, OCR e QR
 ```
 
-Configurações e log ficam em `%APPDATA%\Capturo`.
+## Ainda não feito
 
-## Próximos passos
-
-- Gravação de vídeo (Windows.Graphics.Capture + Media Foundation, cursor e cliques desenhados).
-- OCR e QR Code com `Windows.Media.Ocr`.
-- Captura com rolagem, tela de configurações e atalhos personalizáveis.
+- Áudio (microfone e som do sistema) na gravação.
+- Webcam sobreposta ao vídeo, legendas automáticas e conversão para GIF/WebM.
+- Workspace (histórico de capturas com miniaturas) e compartilhamento em nuvem.
+- Vídeo em tela muito grande (5120 px) fica em ~8 fps com BitBlt; usar Windows.Graphics.Capture resolveria.
