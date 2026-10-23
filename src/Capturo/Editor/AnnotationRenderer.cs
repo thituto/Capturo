@@ -40,8 +40,72 @@ public static class AnnotationRenderer
         SpotlightAnnotation s => SpotlightMask(new[] { s }, new Size(source.PixelWidth, source.PixelHeight)),
         MagnifierAnnotation m => Magnifier(m, source),
         CalloutAnnotation c => Callout(c),
+        BraceAnnotation b => Brace(b),
+        StampAnnotation s => Stamp(s),
+        ImageAnnotation i => Picture(i),
         _ => throw new NotSupportedException(annotation.GetType().Name),
     };
+
+    /// <summary>Chave desenhada em coordenadas locais (u ao longo do eixo, v para o lado) e levada para a imagem.</summary>
+    private static FrameworkElement Brace(BraceAnnotation b)
+    {
+        var axis = b.End - b.Start;
+        double length = axis.Length;
+        var geometry = new StreamGeometry();
+        if (length >= 1)
+        {
+            axis.Normalize();
+            var normal = new Vector(-axis.Y, axis.X);
+            Point At(double u, double v) => b.Start + axis * u + normal * v;
+            double depth = b.Depth, half = depth / 2, r = Math.Min(half, length / 4), mid = length / 2;
+            using var ctx = geometry.Open();
+            ctx.BeginFigure(At(0, 0), false, false);
+            ctx.QuadraticBezierTo(At(0, half), At(r, half), true, true);
+            ctx.LineTo(At(mid - r, half), true, true);
+            ctx.QuadraticBezierTo(At(mid, half), At(mid, depth), true, true);
+            ctx.QuadraticBezierTo(At(mid, half), At(mid + r, half), true, true);
+            ctx.LineTo(At(length - r, half), true, true);
+            ctx.QuadraticBezierTo(At(length, half), At(length, 0), true, true);
+        }
+        geometry.Freeze();
+        return new Path
+        {
+            Data = geometry,
+            Stroke = Brush(b.Color),
+            StrokeThickness = b.Thickness,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+        };
+    }
+
+    private static FrameworkElement Stamp(StampAnnotation s)
+    {
+        var grid = new Grid { Width = s.Size, Height = s.Size };
+        grid.Children.Add(new Ellipse { Fill = Brush(s.Color), Stroke = Brushes.White, StrokeThickness = Math.Max(1.5, s.Size / 20) });
+        grid.Children.Add(new TextBlock
+        {
+            Text = s.Glyph,
+            Foreground = Brush(Geometry2D.ContrastText(s.Color)),
+            FontFamily = new FontFamily("Segoe UI Symbol"),
+            FontWeight = FontWeights.Bold,
+            FontSize = s.Size * 0.55,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        Canvas.SetLeft(grid, s.Center.X - s.Size / 2);
+        Canvas.SetTop(grid, s.Center.Y - s.Size / 2);
+        return grid;
+    }
+
+    private static FrameworkElement Picture(ImageAnnotation i)
+    {
+        var image = new Image { Source = i.Picture, Width = Math.Max(1, i.Rect.Width), Height = Math.Max(1, i.Rect.Height), Stretch = Stretch.Fill };
+        RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
+        Canvas.SetLeft(image, i.Rect.X);
+        Canvas.SetTop(image, i.Rect.Y);
+        return image;
+    }
 
     private static FrameworkElement Arrow(ArrowAnnotation a)
     {

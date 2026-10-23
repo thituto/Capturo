@@ -36,11 +36,18 @@ public abstract record Annotation
     public virtual Annotation WithSize(double size) => this;
     public virtual Annotation WithStyle(ShapeStyle style) => this;
 
+    /// <summary>Acompanha um redimensionamento da imagem: posições e tamanhos escalam junto.</summary>
+    public abstract Annotation Scale(double sx, double sy);
+
     protected static Rect Inflate(Rect rect, double amount)
     {
         rect.Inflate(amount, amount);
         return rect;
     }
+
+    protected static Point S(Point p, double sx, double sy) => new(p.X * sx, p.Y * sy);
+    protected static Rect S(Rect r, double sx, double sy) => new(r.X * sx, r.Y * sy, r.Width * sx, r.Height * sy);
+    protected static double S(double length, double sx, double sy) => length * (sx + sy) / 2;
 }
 
 /// <summary>As 8 alças de um retângulo: cantos e meios de lado, em sentido horário a partir do canto superior esquerdo.</summary>
@@ -72,6 +79,7 @@ public static class RectHandles
 
 public sealed record ArrowAnnotation(Point Start, Point End, Color Color, double Thickness) : Annotation
 {
+    public override Annotation Scale(double sx, double sy) => this with { Start = S(Start, sx, sy), End = S(End, sx, sy), Thickness = S(Thickness, sx, sy) };
     public override Rect Bounds => Inflate(new Rect(Start, End), Thickness * 3);
     public override bool HitTest(Point p) => Geometry2D.DistanceToSegment(p, Start, End) <= Thickness * 2 + 4;
     public override Annotation Offset(Vector delta) => this with { Start = Start + delta, End = End + delta };
@@ -84,6 +92,7 @@ public sealed record ArrowAnnotation(Point Start, Point End, Color Color, double
 
 public sealed record LineAnnotation(Point Start, Point End, Color Color, double Thickness) : Annotation
 {
+    public override Annotation Scale(double sx, double sy) => this with { Start = S(Start, sx, sy), End = S(End, sx, sy), Thickness = S(Thickness, sx, sy) };
     public override Rect Bounds => Inflate(new Rect(Start, End), Thickness + 4);
     public override bool HitTest(Point p) => Geometry2D.DistanceToSegment(p, Start, End) <= Thickness + 5;
     public override Annotation Offset(Vector delta) => this with { Start = Start + delta, End = End + delta };
@@ -96,6 +105,7 @@ public sealed record LineAnnotation(Point Start, Point End, Color Color, double 
 
 public sealed record RectangleAnnotation(Rect Rect, Color Color, double Thickness, ShapeStyle Style) : Annotation
 {
+    public override Annotation Scale(double sx, double sy) => this with { Rect = S(Rect, sx, sy), Thickness = S(Thickness, sx, sy) };
     public override Rect Bounds => Inflate(Rect, Thickness);
     public override Annotation Offset(Vector delta) => this with { Rect = Rect.Offset(Rect, delta) };
     public override IReadOnlyList<Point> Handles => RectHandles.Of(Rect);
@@ -107,6 +117,7 @@ public sealed record RectangleAnnotation(Rect Rect, Color Color, double Thicknes
 
 public sealed record EllipseAnnotation(Rect Rect, Color Color, double Thickness, ShapeStyle Style) : Annotation
 {
+    public override Annotation Scale(double sx, double sy) => this with { Rect = S(Rect, sx, sy), Thickness = S(Thickness, sx, sy) };
     public override Rect Bounds => Inflate(Rect, Thickness);
     public override Annotation Offset(Vector delta) => this with { Rect = Rect.Offset(Rect, delta) };
     public override IReadOnlyList<Point> Handles => RectHandles.Of(Rect);
@@ -119,6 +130,7 @@ public sealed record EllipseAnnotation(Rect Rect, Color Color, double Thickness,
 /// <summary>Traço livre; com <see cref="Highlighter"/> vira marca-texto translúcido e largo.</summary>
 public sealed record PenAnnotation(ImmutableArray<Point> Points, Color Color, double Thickness, bool Highlighter) : Annotation
 {
+    public override Annotation Scale(double sx, double sy) => this with { Points = Points.Select(p => S(p, sx, sy)).ToImmutableArray(), Thickness = S(Thickness, sx, sy) };
     public double StrokeWidth => Highlighter ? Thickness * 4 : Thickness;
 
     public override Rect Bounds
@@ -156,6 +168,7 @@ public sealed record PenAnnotation(ImmutableArray<Point> Points, Color Color, do
 /// <summary>Texto solto; <see cref="Filled"/> desenha um fundo na cor escolhida, com o texto em contraste.</summary>
 public sealed record TextAnnotation(Point Origin, string Text, Color Color, double FontSize, bool Filled) : Annotation
 {
+    public override Annotation Scale(double sx, double sy) => this with { Origin = S(Origin, sx, sy), FontSize = S(FontSize, sx, sy) };
     public override Rect Bounds
     {
         get
@@ -177,6 +190,7 @@ public sealed record TextAnnotation(Point Origin, string Text, Color Color, doub
 /// <summary>Marcador numerado (1, 2, 3...) para indicar a ordem de passos num tutorial.</summary>
 public sealed record StepAnnotation(Point Center, int Number, Color Color, double Diameter) : Annotation
 {
+    public override Annotation Scale(double sx, double sy) => this with { Center = S(Center, sx, sy), Diameter = S(Diameter, sx, sy) };
     public override Rect Bounds => new(Center.X - Diameter / 2, Center.Y - Diameter / 2, Diameter, Diameter);
     public override Annotation Offset(Vector delta) => this with { Center = Center + delta };
     public override Annotation WithColor(Color color) => this with { Color = color };
@@ -186,6 +200,7 @@ public sealed record StepAnnotation(Point Center, int Number, Color Color, doubl
 /// <summary>Pixeliza a área para esconder dados sensíveis.</summary>
 public sealed record PixelateAnnotation(Rect Rect) : Annotation
 {
+    public override Annotation Scale(double sx, double sy) => this with { Rect = S(Rect, sx, sy) };
     public override Rect Bounds => Rect;
     public override Annotation Offset(Vector delta) => this with { Rect = Rect.Offset(Rect, delta) };
     public override IReadOnlyList<Point> Handles => RectHandles.Of(Rect);
@@ -195,6 +210,7 @@ public sealed record PixelateAnnotation(Rect Rect) : Annotation
 /// <summary>Destaque: escurece toda a imagem menos esta área. Vários destaques abrem várias "janelas" na mesma máscara.</summary>
 public sealed record SpotlightAnnotation(Rect Rect, double Dim, bool Rounded) : Annotation
 {
+    public override Annotation Scale(double sx, double sy) => this with { Rect = S(Rect, sx, sy) };
     public override Rect Bounds => Rect;
     public override Annotation Offset(Vector delta) => this with { Rect = Rect.Offset(Rect, delta) };
     public override IReadOnlyList<Point> Handles => RectHandles.Of(Rect);
@@ -205,6 +221,7 @@ public sealed record SpotlightAnnotation(Rect Rect, double Dim, bool Rounded) : 
 /// <summary>Lupa: mostra a área <see cref="Source"/> ampliada dentro de <see cref="Target"/>.</summary>
 public sealed record MagnifierAnnotation(Rect Source, Rect Target, Color Color, double Thickness) : Annotation
 {
+    public override Annotation Scale(double sx, double sy) => this with { Source = S(Source, sx, sy), Target = S(Target, sx, sy), Thickness = S(Thickness, sx, sy) };
     public override Rect Bounds => Rect.Union(Inflate(Source, Thickness), Inflate(Target, Thickness));
     public override bool HitTest(Point p) => Source.Contains(p) || Target.Contains(p);
     public override Annotation Offset(Vector delta) =>
@@ -240,6 +257,7 @@ public sealed record MagnifierAnnotation(Rect Source, Rect Target, Color Color, 
 /// <summary>Balão de texto com ponta (callout).</summary>
 public sealed record CalloutAnnotation(Rect Box, Point Tail, string Text, Color Color, double FontSize) : Annotation
 {
+    public override Annotation Scale(double sx, double sy) => this with { Box = S(Box, sx, sy), Tail = S(Tail, sx, sy), FontSize = S(FontSize, sx, sy) };
     public override Rect Bounds
     {
         get
@@ -273,11 +291,69 @@ public sealed record CalloutAnnotation(Rect Box, Point Tail, string Text, Color 
     }
 }
 
+/// <summary>Chave "{" ligando dois pontos, com a ponta do meio voltada para um lado (agrupa itens de uma lista).</summary>
+public sealed record BraceAnnotation(Point Start, Point End, Color Color, double Thickness) : Annotation
+{
+    /// <summary>Quanto a chave se afasta da linha entre as pontas.</summary>
+    public double Depth => Math.Max(10, (End - Start).Length * 0.08);
+
+    public override Rect Bounds => Inflate(new Rect(Start, End), Depth + Thickness + 2);
+    public override bool HitTest(Point p) => Geometry2D.DistanceToSegment(p, Start, End) <= Depth + Thickness + 4;
+    public override Annotation Offset(Vector delta) => this with { Start = Start + delta, End = End + delta };
+    public override IReadOnlyList<Point> Handles => new[] { Start, End };
+    public override Annotation MoveHandle(int index, Point position) =>
+        index == 0 ? this with { Start = position } : this with { End = position };
+    public override Annotation WithColor(Color color) => this with { Color = color };
+    public override Annotation WithSize(double size) => this with { Thickness = size };
+    public override Annotation Scale(double sx, double sy) => this with { Start = S(Start, sx, sy), End = S(End, sx, sy), Thickness = S(Thickness, sx, sy) };
+}
+
+/// <summary>Carimbo: um símbolo pronto (certo, errado, alerta, estrela...) num tamanho escolhido.</summary>
+public sealed record StampAnnotation(Point Center, string Glyph, Color Color, double Size) : Annotation
+{
+    public static readonly string[] Glyphs = { "✔", "✖", "!", "?", "★", "♥", "➜", "☺" };
+
+    public override Rect Bounds => new(Center.X - Size / 2, Center.Y - Size / 2, Size, Size);
+    public override Annotation Offset(Vector delta) => this with { Center = Center + delta };
+    public override IReadOnlyList<Point> Handles => RectHandles.Of(Bounds);
+
+    /// <summary>Redimensionar pelo canto mantém o carimbo quadrado e centrado.</summary>
+    public override Annotation MoveHandle(int index, Point position)
+    {
+        var rect = RectHandles.Move(Bounds, index, position);
+        double size = Math.Max(12, Math.Max(rect.Width, rect.Height));
+        return this with { Center = new Point(rect.X + rect.Width / 2, rect.Y + rect.Height / 2), Size = size };
+    }
+
+    public override Annotation WithColor(Color color) => this with { Color = color };
+    public override Annotation WithSize(double size) => this with { Size = SizeMapping.StampSize(size) };
+    public override Annotation Scale(double sx, double sy) => this with { Center = S(Center, sx, sy), Size = S(Size, sx, sy) };
+}
+
+/// <summary>Outra imagem colada por cima da captura (logotipo, ícone, recorte de outra tela).</summary>
+public sealed record ImageAnnotation(Rect Rect, System.Windows.Media.Imaging.BitmapSource Picture) : Annotation
+{
+    public override Rect Bounds => Rect;
+    public override Annotation Offset(Vector delta) => this with { Rect = Rect.Offset(Rect, delta) };
+    public override IReadOnlyList<Point> Handles => RectHandles.Of(Rect);
+    public override Annotation MoveHandle(int index, Point position) => this with { Rect = RectHandles.Move(Rect, index, position) };
+    public override Annotation Scale(double sx, double sy) => this with { Rect = S(Rect, sx, sy) };
+
+    /// <summary>Encaixa a imagem com no máximo metade do tamanho da captura, centrada em <paramref name="center"/>.</summary>
+    public static ImageAnnotation Create(System.Windows.Media.Imaging.BitmapSource picture, Point center, Size canvas)
+    {
+        double scale = Math.Min(1, Math.Min(canvas.Width / 2 / picture.PixelWidth, canvas.Height / 2 / picture.PixelHeight));
+        double width = picture.PixelWidth * scale, height = picture.PixelHeight * scale;
+        return new ImageAnnotation(new Rect(center.X - width / 2, center.Y - height / 2, width, height), picture);
+    }
+}
+
 /// <summary>Converte o controle único de "espessura" (1 a 12) no tamanho de cada tipo de anotação.</summary>
 public static class SizeMapping
 {
     public static double FontSize(double size) => 10 + size * 3;
     public static double StepDiameter(double size) => 18 + size * 3;
+    public static double StampSize(double size) => 20 + size * 6;
 }
 
 public static class Geometry2D

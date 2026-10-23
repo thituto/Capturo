@@ -1,12 +1,16 @@
 using System.Collections.Immutable;
-using System.Windows;
+using System.Windows.Media.Imaging;
 
 namespace Capturo.Editor;
 
-/// <summary>Estado completo do documento: anotações, recorte (null = imagem inteira) e efeitos da imagem.</summary>
-public sealed record EditorState(ImmutableList<Annotation> Items, Int32Rect? Crop, ImageEffects Effects)
+/// <summary>
+/// Estado completo do documento: a imagem (cortar, recortar e redimensionar geram uma nova), as anotações
+/// por cima dela e os efeitos de exportação. Imutável: desfazer é voltar ao instantâneo anterior.
+/// </summary>
+public sealed record EditorState(BitmapSource Image, ImmutableList<Annotation> Items, ImageEffects Effects)
 {
-    public static readonly EditorState Empty = new(ImmutableList<Annotation>.Empty, null, ImageEffects.None);
+    public static EditorState For(BitmapSource image, ImageEffects? effects = null) =>
+        new(image, ImmutableList<Annotation>.Empty, effects ?? ImageEffects.None);
 
     public int NextStepNumber => Items.OfType<StepAnnotation>().Select(s => s.Number).DefaultIfEmpty(0).Max() + 1;
 }
@@ -17,9 +21,9 @@ public sealed class EditorHistory
     private readonly Stack<EditorState> _undo = new();
     private readonly Stack<EditorState> _redo = new();
 
-    public EditorHistory(EditorState? initial = null)
+    public EditorHistory(EditorState initial)
     {
-        Current = initial ?? EditorState.Empty;
+        Current = initial;
     }
 
     public EditorState Current { get; private set; }
@@ -51,5 +55,11 @@ public sealed class EditorHistory
         _undo.Push(Current);
         Current = _redo.Pop();
         return true;
+    }
+
+    /// <summary>Volta ao estado original (o desfazer continua podendo refazer tudo).</summary>
+    public void UndoAll()
+    {
+        while (Undo()) { }
     }
 }

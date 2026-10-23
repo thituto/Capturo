@@ -1,9 +1,13 @@
 using System.Collections.Immutable;
+using System.Collections.Specialized;
+using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
@@ -29,7 +33,11 @@ public enum EditorTool
     Spotlight,
     Magnifier,
     Pixelate,
+    Stamp,
+    Image,
+    Brace,
     Crop,
+    CutOut,
 }
 
 public partial class EditorWindow : Window
@@ -42,6 +50,7 @@ public partial class EditorWindow : Window
         Color.FromRgb(0x22, 0xC5, 0x5E), // verde
         Color.FromRgb(0x3B, 0x82, 0xF6), // azul
         Color.FromRgb(0xA8, 0x55, 0xF7), // roxo
+        Color.FromRgb(0xEC, 0x48, 0x99), // rosa
         Color.FromRgb(0x11, 0x18, 0x27), // preto
         Color.FromRgb(0x9C, 0xA3, 0xAF), // cinza
         Color.FromRgb(0xFF, 0xFF, 0xFF), // branco
@@ -49,9 +58,8 @@ public partial class EditorWindow : Window
 
     private static readonly Brush AccentBrush = Frozen(new SolidColorBrush(Color.FromRgb(0x3B, 0x82, 0xF6)));
 
-    private enum Gesture { None, Draw, Move, Resize, Crop }
+    private enum Gesture { None, Draw, Move, Resize, Crop, CutOut }
 
-    private readonly BitmapSource _source;
     private readonly AppSettings _settings;
     private readonly EditorHistory _history;
     private string? _filePath;
@@ -61,6 +69,8 @@ public partial class EditorWindow : Window
     private Color _color = Palette[0];
     private double _size = 4;
     private ShapeStyle _style = ShapeStyle.Default;
+    private string _stampGlyph = StampAnnotation.Glyphs[0];
+    private bool _cutHorizontal = true;
     private int? _selected;
     private double _zoom = 1;
     private bool _syncingControls;
@@ -73,7 +83,7 @@ public partial class EditorWindow : Window
     private Annotation? _gestureOriginal;
     private Annotation? _draft;
     private List<Point>? _penPoints;
-    private Int32Rect? _cropDraft;
+    private Int32Rect? _areaDraft;
 
     // Edição de texto (texto solto ou balão)
     private TextBox? _textEditor;
@@ -83,34 +93,26 @@ public partial class EditorWindow : Window
     public EditorWindow(BitmapSource source, string? filePath, AppSettings settings)
     {
         InitializeComponent();
-        _source = source;
         _filePath = filePath;
         _settings = settings;
-        _history = new EditorHistory(EditorState.Empty with { Effects = LoadEffects(settings) });
-
-        BaseImage.Source = source;
-        BaseImage.Width = source.PixelWidth;
-        BaseImage.Height = source.PixelHeight;
-        foreach (var layer in new[] { AnnotationLayer, OverlayLayer, InputLayer })
-        {
-            layer.Width = source.PixelWidth;
-            layer.Height = source.PixelHeight;
-        }
+        _history = new EditorHistory(EditorState.For(source, LoadEffects(settings)));
 
         BuildToolbar();
         PreviewKeyDown += OnPreviewKeyDown;
+        SourceInitialized += (_, _) => DarkTitleBar.Apply(this);
         Loaded += (_, _) => FitToWindow();
         Closing += OnClosing;
         Render();
     }
 
-    private Size ImageSize => new(_source.PixelWidth, _source.PixelHeight);
+    private BitmapSource Image => _history.Current.Image;
+    private Size ImageSize => new(Image.PixelWidth, Image.PixelHeight);
 
-    // ───────────────────────── Barra de ferramentas ─────────────────────────
+    // ───────────────────────── Ferramentas e propriedades ─────────────────────────
 
     private void BuildToolbar()
     {
-        foreach (var button in ToolPanel.Children.OfType<ToggleButton>())
+        foreach (var button in ToolPanel.Children.OfType<RadioButton>())
             button.Click += (s, _) => SetTool(Enum.Parse<EditorTool>((string)((FrameworkElement)s).Tag));
 
         foreach (var color in Palette)
@@ -121,33 +123,61 @@ public partial class EditorWindow : Window
                 Background = new SolidColorBrush(color),
                 Tag = color,
                 ToolTip = BitmapUtil.ToHex(color),
+                Margin = new Thickness(0, 0, 4, 4),
             };
             swatch.Click += (s, _) => SetColor((Color)((FrameworkElement)s).Tag);
             ColorPanel.Children.Add(swatch);
+        }
+
+        foreach (var glyph in StampAnnotation.Glyphs)
+        {
+            var button = new Button { Content = glyph, FontFamily = new FontFamily("Segoe UI Symbol"), Width = 30, Margin = new Thickness(0, 0, 4, 4), Tag = glyph };
+            button.Click += (s, _) =>
+            {
+                _stampGlyph = (string)((FrameworkElement)s).Tag;
+                ModifySelected(a => a is StampAnnotation st ? st with { Glyph = _stampGlyph } : a);
+                UpdateStampButtons();
+            };
+            StampGlyphs.Children.Add(button);
         }
 
         SizeValue.Text = _size.ToString("0");
         OpacityValue.Text = "100%";
         SetTool(_tool);
         SetColor(_color);
+        UpdateStampButtons();
+    }
+
+    private void UpdateStampButtons()
+    {
+        foreach (var button in StampGlyphs.Children.OfType<Button>())
+            button.Background = (string)button.Tag == _stampGlyph ? AccentBrush : Brushes.Transparent;
     }
 
     private void SetTool(EditorTool tool)
     {
         CommitText();
         _tool = tool;
-        foreach (var button in ToolPanel.Children.OfType<ToggleButton>())
+        foreach (var button in ToolPanel.Children.OfType<RadioButton>())
             button.IsChecked = (string)button.Tag == tool.ToString();
-        InputLayer.Cursor = tool switch
-        {
-            EditorTool.Select => Cursors.Arrow,
-            EditorTool.Text => Cursors.IBeam,
-            _ => Cursors.Cross,
-        };
+        InputLayer.Cursor = DefaultCursor();
         if (tool == EditorTool.Spotlight)
             SetOpacityControl(0.6);
+        StampPanel.Visibility = tool == EditorTool.Stamp ? Visibility.Visible : Visibility.Collapsed;
+        PanelTitle.Text = ToolName(tool);
+        ToolHelp.Text = ToolHint(tool);
+        if (tool == EditorTool.Image)
+            InsertImageFromFile(null);
         Render();
     }
+
+    private Cursor DefaultCursor() => _tool switch
+    {
+        EditorTool.Select => Cursors.Arrow,
+        EditorTool.Text => Cursors.IBeam,
+        EditorTool.Image => Cursors.Arrow,
+        _ => Cursors.Cross,
+    };
 
     private void SetColor(Color color)
     {
@@ -155,9 +185,7 @@ public partial class EditorWindow : Window
         foreach (var swatch in ColorPanel.Children.OfType<Button>())
             swatch.BorderBrush = (Color)swatch.Tag == color ? Brushes.White : Brushes.Transparent;
         if (_textEditor != null)
-        {
             _textEditor.Foreground = new SolidColorBrush(_editingTemplate is CalloutAnnotation ? Geometry2D.ContrastText(color) : color);
-        }
         if (!_syncingControls)
             ModifySelected(a => a.WithColor(color));
     }
@@ -198,7 +226,7 @@ public partial class EditorWindow : Window
         _style = _style with { Opacity = opacity };
     }
 
-    /// <summary>Ao selecionar um item, os controles passam a mostrar o estilo dele.</summary>
+    /// <summary>Ao selecionar um item, o painel de propriedades passa a mostrar o estilo dele.</summary>
     private void SyncControlsTo(Annotation item)
     {
         _syncingControls = true;
@@ -210,6 +238,7 @@ public partial class EditorWindow : Window
                 case EllipseAnnotation el: ApplyStyleToControls(el.Style); break;
                 case SpotlightAnnotation s: ApplyStyleToControls(new ShapeStyle(false, s.Dim, s.Rounded)); break;
                 case TextAnnotation t: FillToggle.IsChecked = t.Filled; _style = _style with { Filled = t.Filled }; break;
+                case StampAnnotation st: _stampGlyph = st.Glyph; UpdateStampButtons(); break;
             }
         }
         finally
@@ -236,7 +265,12 @@ public partial class EditorWindow : Window
             Commit(_history.Current with { Items = items.SetItem(index, updated) });
     }
 
-    // ───────────────────────── Efeitos da imagem ─────────────────────────
+    private void Properties_Click(object sender, RoutedEventArgs e) => ToggleProperties();
+
+    private void ToggleProperties() =>
+        PropertiesPanel.Visibility = PropertiesPanel.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+
+    // ───────────────────────── Bordas (efeitos da imagem) ─────────────────────────
 
     private static ImageEffects LoadEffects(AppSettings settings)
     {
@@ -261,68 +295,50 @@ public partial class EditorWindow : Window
         _settings.Save();
     }
 
-    private void Effects_Changed(object sender, RoutedEventArgs e)
+    /// <summary>Menu do botão Bordas: liga/desliga cada efeito e escolhe cor, espessura e tipo de rasgo.</summary>
+    private void Borders_Click(object sender, RoutedEventArgs e)
     {
-        if (_syncingControls)
-            return;
-        ApplyEffects(_history.Current.Effects with
-        {
-            Border = BorderToggle.IsChecked == true,
-            Shadow = ShadowToggle.IsChecked == true,
-            RoundedCorners = CornersToggle.IsChecked == true,
-        });
-    }
-
-    private void BorderColorButton_Click(object sender, RoutedEventArgs e)
-    {
-        var panel = new WrapPanel { MaxWidth = 150 };
+        var fx = _history.Current.Effects;
+        var panel = new StackPanel { Width = 230 };
         Popup? popup = null;
+
+        CheckBox Toggle(string text, bool value, Func<bool, ImageEffects> apply)
+        {
+            var box = new CheckBox { Content = text, IsChecked = value, Margin = new Thickness(6, 4, 6, 4) };
+            box.Click += (_, _) => ApplyEffects(apply(box.IsChecked == true));
+            panel.Children.Add(box);
+            return box;
+        }
+
+        Toggle("Borda", fx.Border, v => _history.Current.Effects with { Border = v });
+        var colors = new WrapPanel { Margin = new Thickness(24, 0, 6, 4) };
         foreach (var color in Palette)
         {
-            var swatch = new Button { Style = (Style)FindResource("SwatchButton"), Background = new SolidColorBrush(color), Margin = new Thickness(3) };
-            swatch.Click += (_, _) =>
-            {
-                popup!.IsOpen = false;
-                ApplyEffects(_history.Current.Effects with { Border = true, BorderColor = color });
-            };
-            panel.Children.Add(swatch);
+            var swatch = new Button { Style = (Style)FindResource("SwatchButton"), Background = new SolidColorBrush(color), Margin = new Thickness(0, 0, 3, 3),
+                BorderBrush = color == fx.BorderColor ? Brushes.White : Brushes.Transparent };
+            swatch.Click += (_, _) => { popup!.IsOpen = false; ApplyEffects(_history.Current.Effects with { Border = true, BorderColor = color }); };
+            colors.Children.Add(swatch);
         }
-        popup = ShowPopup(BorderColorButton, panel);
-    }
-
-    private void BorderWidthButton_Click(object sender, RoutedEventArgs e)
-    {
-        ShowChoices(BorderWidthButton, new[] { 1, 2, 3, 4, 6, 8, 12 }.Select(w =>
-            ($"{w} px", (Action)(() => ApplyEffects(_history.Current.Effects with { Border = true, BorderWidth = w })))));
-    }
-
-    private void TornButton_Click(object sender, RoutedEventArgs e)
-    {
-        ShowChoices(TornButton, new (string, Action)[]
+        panel.Children.Add(colors);
+        var widths = new WrapPanel { Margin = new Thickness(24, 0, 6, 6) };
+        foreach (int w in new[] { 1, 2, 3, 4, 6, 8, 12 })
         {
-            ("Sem borda rasgada", () => ApplyEffects(_history.Current.Effects with { Torn = TornEdges.None })),
-            ("Rasgada embaixo", () => ApplyEffects(_history.Current.Effects with { Torn = TornEdges.Bottom })),
-            ("Rasgada embaixo e à direita", () => ApplyEffects(_history.Current.Effects with { Torn = TornEdges.BottomRight })),
-            ("Rasgada em todos os lados", () => ApplyEffects(_history.Current.Effects with { Torn = TornEdges.All })),
-        });
-    }
-
-    private void SyncEffectControls(ImageEffects effects)
-    {
-        _syncingControls = true;
-        BorderToggle.IsChecked = effects.Border;
-        ShadowToggle.IsChecked = effects.Shadow;
-        CornersToggle.IsChecked = effects.RoundedCorners;
-        BorderColorSwatch.Fill = new SolidColorBrush(effects.BorderColor);
-        BorderWidthButton.Content = $"{effects.BorderWidth:0} px ▾";
-        TornButton.Content = effects.Torn switch
+            var button = new Button { Content = $"{w}", Width = 26, Margin = new Thickness(0, 0, 3, 0),
+                Background = Math.Abs(fx.BorderWidth - w) < 0.1 ? AccentBrush : Brushes.Transparent };
+            button.Click += (_, _) => { popup!.IsOpen = false; ApplyEffects(_history.Current.Effects with { Border = true, BorderWidth = w }); };
+            widths.Children.Add(button);
+        }
+        panel.Children.Add(widths);
+        Toggle("Sombra", fx.Shadow, v => _history.Current.Effects with { Shadow = v });
+        Toggle("Cantos arredondados", fx.RoundedCorners, v => _history.Current.Effects with { RoundedCorners = v });
+        panel.Children.Add(new TextBlock { Text = "Borda rasgada", Foreground = Brushes.Gray, Margin = new Thickness(6, 8, 6, 2) });
+        foreach (var (label, torn) in new[] { ("Nenhuma", TornEdges.None), ("Embaixo", TornEdges.Bottom), ("Embaixo e à direita", TornEdges.BottomRight), ("Todos os lados", TornEdges.All) })
         {
-            TornEdges.None => "≈ Rasgado ▾",
-            TornEdges.Bottom => "≈ Embaixo ▾",
-            TornEdges.BottomRight => "≈ Embaixo+dir. ▾",
-            _ => "≈ Todos os lados ▾",
-        };
-        _syncingControls = false;
+            var option = new RadioButton { Content = label, IsChecked = fx.Torn == torn, GroupName = "torn", Margin = new Thickness(12, 2, 6, 2), Foreground = Brushes.White };
+            option.Click += (_, _) => ApplyEffects(_history.Current.Effects with { Torn = torn });
+            panel.Children.Add(option);
+        }
+        popup = ShowPopup(BordersButton, panel);
     }
 
     private Popup ShowPopup(FrameworkElement anchor, UIElement content)
@@ -335,10 +351,10 @@ public partial class EditorWindow : Window
             AllowsTransparency = true,
             Child = new Border
             {
-                Background = (Brush)FindResource("PanelBackground"),
-                BorderBrush = (Brush)FindResource("PanelBorder"),
+                Background = (Brush)FindResource("BarBackground"),
+                BorderBrush = (Brush)Application.Current.FindResource("PanelBorder"),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
+                CornerRadius = new CornerRadius(4),
                 Padding = new Thickness(4),
                 Child = content,
             },
@@ -347,9 +363,11 @@ public partial class EditorWindow : Window
         return popup;
     }
 
-    private void ShowChoices(FrameworkElement anchor, IEnumerable<(string Label, Action Action)> choices)
+    /// <summary>Menu suspenso simples: uma lista de ações abaixo do botão.</summary>
+    private void ShowMenu(object sender, IEnumerable<(string Label, Action Action)> choices)
     {
-        var panel = new StackPanel();
+        var anchor = (FrameworkElement)sender;
+        var panel = new StackPanel { MinWidth = 200 };
         Popup? popup = null;
         foreach (var (label, action) in choices)
         {
@@ -358,6 +376,177 @@ public partial class EditorWindow : Window
             panel.Children.Add(button);
         }
         popup = ShowPopup(anchor, panel);
+    }
+
+    // ───────────────────────── Botões da barra de cima ─────────────────────────
+
+    private void CopyClose_Click(object sender, RoutedEventArgs e) => CopyAndClose();
+
+    private void CopyAndClose()
+    {
+        var result = RenderResult();
+        OutputService.CopyToClipboard(result);
+        if (_dirty && _filePath != null)
+            SaveTo(_filePath, result);
+        _dirty = false;
+        Close();
+    }
+
+    private void CopyCloseMenu_Click(object sender, RoutedEventArgs e) => ShowMenu(sender, new (string, Action)[]
+    {
+        ("Copiar e sair", CopyAndClose),
+        ("Salvar e sair", () => { if (Save()) Close(); }),
+        ("Sair sem salvar", () => { _dirty = false; Close(); }),
+    });
+
+    private void Print_Click(object sender, RoutedEventArgs e) => PrintResult();
+
+    private void PrintResult()
+    {
+        var dialog = new PrintDialog();
+        if (dialog.ShowDialog() != true)
+            return;
+        var image = RenderResult();
+        double scale = Math.Min(1, Math.Min(dialog.PrintableAreaWidth / image.PixelWidth, dialog.PrintableAreaHeight / image.PixelHeight));
+        var page = new Image { Source = image, Width = image.PixelWidth * scale, Height = image.PixelHeight * scale };
+        page.Measure(new Size(dialog.PrintableAreaWidth, dialog.PrintableAreaHeight));
+        page.Arrange(new Rect(page.DesiredSize));
+        dialog.PrintVisual(page, Title);
+    }
+
+    private void Copy_Click(object sender, RoutedEventArgs e) => CopyResult();
+
+    private void CopyMenu_Click(object sender, RoutedEventArgs e) => ShowMenu(sender, new (string, Action)[]
+    {
+        ("Copiar a imagem", CopyResult),
+        ("Copiar como arquivo (para colar no Explorer, e-mail...)", CopyAsFile),
+        ("Copiar o caminho do arquivo", () => { if (EnsureSaved() is { } path) OutputService.CopyText(path); }),
+    });
+
+    private void CopyAsFile()
+    {
+        if (EnsureSaved() is not { } path)
+            return;
+        var files = new StringCollection { path };
+        Clipboard.SetFileDropList(files);
+        Flash("Arquivo copiado");
+    }
+
+    private void Undo_Click(object sender, RoutedEventArgs e) => Undo();
+
+    private void UndoMenu_Click(object sender, RoutedEventArgs e) => ShowMenu(sender, new (string, Action)[]
+    {
+        ("Refazer (Ctrl+Y)", Redo),
+        ("Desfazer tudo", () => { CommitText(); _history.UndoAll(); _selected = null; _dirty = true; Render(); FitToWindow(); }),
+    });
+
+    private void Crop_Click(object sender, RoutedEventArgs e) => SetTool(EditorTool.Crop);
+
+    private void CropMenu_Click(object sender, RoutedEventArgs e) => ShowMenu(sender, new (string, Action)[]
+    {
+        ("Cortar arrastando uma área", () => SetTool(EditorTool.Crop)),
+        ("Remover bordas de cor uniforme", () => ApplyImageChange(ImageOps.TrimUniformBorders(_history.Current))),
+    });
+
+    private void CutOut_Click(object sender, RoutedEventArgs e) => ShowMenu(sender, new (string, Action)[]
+    {
+        ("Recortar faixa horizontal (arraste de cima para baixo)", () => { _cutHorizontal = true; SetTool(EditorTool.CutOut); }),
+        ("Recortar faixa vertical (arraste da esquerda para a direita)", () => { _cutHorizontal = false; SetTool(EditorTool.CutOut); }),
+    });
+
+    private void Resize_Click(object sender, RoutedEventArgs e)
+    {
+        CommitText();
+        var dialog = new ResizeDialog(this, Image.PixelWidth, Image.PixelHeight);
+        if (dialog.ShowDialog() == true)
+            ApplyImageChange(ImageOps.Resize(_history.Current, dialog.ResultWidth, dialog.ResultHeight));
+    }
+
+    private void CanvasSize_Click(object sender, RoutedEventArgs e)
+    {
+        CommitText();
+        var dialog = new CanvasSizeDialog(this);
+        if (dialog.ShowDialog() == true)
+            ApplyImageChange(ImageOps.ExpandCanvas(_history.Current, dialog.Margins, dialog.BackgroundColor));
+    }
+
+    private void Publish_Click(object sender, RoutedEventArgs e) => ShowMenu(sender, new (string, Action)[]
+    {
+        ("Mostrar na pasta", () => { if (EnsureSaved() is { } path) TrayIcon.RevealFile(path); }),
+        ("Abrir com outro programa…", () =>
+        {
+            if (EnsureSaved() is { } path)
+                Process.Start(new ProcessStartInfo("rundll32.exe", $"shell32.dll,OpenAs_RunDLL {path}") { UseShellExecute = false });
+        }),
+        ("Abrir no visualizador padrão", () =>
+        {
+            if (EnsureSaved() is { } path)
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }),
+        ("Copiar o caminho do arquivo", () => { if (EnsureSaved() is { } path) OutputService.CopyText(path); }),
+    });
+
+    /// <summary>Troca a imagem (corte, recorte, tamanho) mantendo o desfazer, e reajusta o zoom.</summary>
+    private void ApplyImageChange(EditorState next)
+    {
+        if (next == _history.Current)
+        {
+            Flash("Nada a alterar");
+            return;
+        }
+        _selected = null;
+        Commit(next);
+        Dispatcher.BeginInvoke(FitToWindow, System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    // ───────────────────────── Imagens inseridas ─────────────────────────
+
+    private void InsertImageFromFile(Point? center)
+    {
+        var dialog = new OpenFileDialog { Filter = "Imagens|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.webp|Todos os arquivos|*.*" };
+        if (dialog.ShowDialog(this) != true)
+        {
+            SetToolSilently(EditorTool.Select);
+            return;
+        }
+        try
+        {
+            var decoder = BitmapDecoder.Create(new Uri(dialog.FileName), BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+            InsertImage(BitmapUtil.Materialize(decoder.Frames[0]), center);
+        }
+        catch (Exception ex) when (ex is IOException or NotSupportedException or FileFormatException)
+        {
+            MessageBox.Show(this, $"Não foi possível abrir a imagem:\n{ex.Message}", "Capturo", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        SetToolSilently(EditorTool.Select);
+    }
+
+    private void InsertImage(BitmapSource picture, Point? center)
+    {
+        var at = center ?? new Point(Image.PixelWidth / 2.0, Image.PixelHeight / 2.0);
+        var item = ImageAnnotation.Create(picture, at, ImageSize);
+        Commit(_history.Current with { Items = _history.Current.Items.Add(item) });
+        Select(_history.Current.Items.Count - 1);
+    }
+
+    /// <summary>Muda a ferramenta sem disparar as ações de quando o usuário a escolhe (evita reabrir o diálogo de imagem).</summary>
+    private void SetToolSilently(EditorTool tool)
+    {
+        _tool = tool;
+        foreach (var button in ToolPanel.Children.OfType<RadioButton>())
+            button.IsChecked = (string)button.Tag == tool.ToString();
+        InputLayer.Cursor = DefaultCursor();
+        PanelTitle.Text = ToolName(tool);
+        ToolHelp.Text = ToolHint(tool);
+    }
+
+    private void PasteImage()
+    {
+        if (!Clipboard.ContainsImage())
+            return;
+        var picture = Clipboard.GetImage();
+        if (picture != null)
+            InsertImage(BitmapUtil.Materialize(picture), null);
     }
 
     // ───────────────────────── Entrada do mouse ─────────────────────────
@@ -396,6 +585,10 @@ public partial class EditorWindow : Window
                 BeginGesture(Gesture.Crop, p);
                 break;
 
+            case EditorTool.CutOut:
+                BeginGesture(Gesture.CutOut, p);
+                break;
+
             case EditorTool.Text:
                 if (TopmostAt(p) is { } existing && items[existing] is TextAnnotation)
                     EditText(existing);
@@ -404,12 +597,17 @@ public partial class EditorWindow : Window
                 break;
 
             case EditorTool.Step:
-                var step = new StepAnnotation(p, _history.Current.NextStepNumber, _color, SizeMapping.StepDiameter(_size));
-                Commit(_history.Current with { Items = items.Add(step) });
+                Commit(_history.Current with { Items = items.Add(new StepAnnotation(p, _history.Current.NextStepNumber, _color, SizeMapping.StepDiameter(_size))) });
+                Select(items.Count);
+                break;
+
+            case EditorTool.Stamp:
+                Commit(_history.Current with { Items = items.Add(new StampAnnotation(p, _stampGlyph, _color, SizeMapping.StampSize(_size))) });
                 Select(items.Count);
                 break;
 
             case EditorTool.Select:
+            case EditorTool.Image:
                 Select(TopmostAt(p));
                 if (_selected is { } hit)
                     BeginGesture(Gesture.Move, p, hit, items[hit]);
@@ -440,7 +638,7 @@ public partial class EditorWindow : Window
         _gestureIndex = index;
         _gestureOriginal = original;
         _draft = null;
-        _cropDraft = null;
+        _areaDraft = null;
         InputLayer.CaptureMouse();
     }
 
@@ -466,10 +664,25 @@ public partial class EditorWindow : Window
                 _draft = _gestureOriginal!.MoveHandle(_handleIndex, p);
                 break;
             case Gesture.Crop:
-                _cropDraft = AnnotationRenderer.ToPixelArea(new Rect(_downPoint, shift ? SquareCorner(_downPoint, p) : p), _source);
+                _areaDraft = AnnotationRenderer.ToPixelArea(new Rect(_downPoint, shift ? SquareCorner(_downPoint, p) : p), Image);
+                break;
+            case Gesture.CutOut:
+                _areaDraft = CutBand(_downPoint, p);
                 break;
         }
         Render();
+    }
+
+    /// <summary>Faixa a recortar: atravessa a imagem inteira na direção escolhida.</summary>
+    private Int32Rect CutBand(Point from, Point to)
+    {
+        if (_cutHorizontal)
+        {
+            int top = (int)Math.Floor(Math.Min(from.Y, to.Y)), bottom = (int)Math.Ceiling(Math.Max(from.Y, to.Y));
+            return new Int32Rect(0, top, Image.PixelWidth, Math.Max(0, bottom - top));
+        }
+        int left = (int)Math.Floor(Math.Min(from.X, to.X)), right = (int)Math.Ceiling(Math.Max(from.X, to.X));
+        return new Int32Rect(left, 0, Math.Max(0, right - left), Image.PixelHeight);
     }
 
     private Annotation? CreateDraft(Point p, bool shift)
@@ -480,6 +693,7 @@ public partial class EditorWindow : Window
         {
             case EditorTool.Arrow: return new ArrowAnnotation(_downPoint, end, _color, _size);
             case EditorTool.Line: return new LineAnnotation(_downPoint, end, _color, _size);
+            case EditorTool.Brace: return new BraceAnnotation(_downPoint, end, _color, _size);
             case EditorTool.Rectangle: return new RectangleAnnotation(rect, _color, _size, _style);
             case EditorTool.Ellipse: return new EllipseAnnotation(rect, _color, _size, _style with { Rounded = false });
             case EditorTool.Pixelate: return new PixelateAnnotation(rect);
@@ -502,12 +716,12 @@ public partial class EditorWindow : Window
             return;
         var gesture = _gesture;
         var draft = _draft;
-        var crop = _cropDraft;
+        var area = _areaDraft;
         int index = _gestureIndex;
         var original = _gestureOriginal;
         _gesture = Gesture.None;
         _draft = null;
-        _cropDraft = null;
+        _areaDraft = null;
         _penPoints = null;
         InputLayer.ReleaseMouseCapture();
 
@@ -523,9 +737,14 @@ public partial class EditorWindow : Window
             case Gesture.Move or Gesture.Resize when draft != null && draft != original:
                 Commit(state with { Items = state.Items.SetItem(index, draft) });
                 break;
-            case Gesture.Crop when crop is { Width: >= 4, Height: >= 4 } area:
-                Commit(state with { Crop = area });
-                Dispatcher.BeginInvoke(FitToWindow, System.Windows.Threading.DispatcherPriority.Loaded);
+            case Gesture.Crop when area is { Width: >= 4, Height: >= 4 } crop:
+                ApplyImageChange(ImageOps.Crop(state, crop));
+                SetToolSilently(EditorTool.Select);
+                break;
+            case Gesture.CutOut when area is { } band && (_cutHorizontal ? band.Height : band.Width) >= 2:
+                ApplyImageChange(_cutHorizontal
+                    ? ImageOps.CutOut(state, band.Y, band.Height, horizontal: true)
+                    : ImageOps.CutOut(state, band.X, band.Width, horizontal: false));
                 break;
         }
         Render();
@@ -544,6 +763,7 @@ public partial class EditorWindow : Window
         PenAnnotation p => p.Points.Length > 1,
         ArrowAnnotation arrow => (arrow.End - arrow.Start).Length >= 4,
         LineAnnotation line => (line.End - line.Start).Length >= 4,
+        BraceAnnotation brace => (brace.End - brace.Start).Length >= 8,
         MagnifierAnnotation m => m.Source.Width >= 8 && m.Source.Height >= 8,
         CalloutAnnotation c => c.Box.Width >= 24 && c.Box.Height >= 16,
         _ => a.Bounds.Width >= 4 && a.Bounds.Height >= 4,
@@ -583,19 +803,14 @@ public partial class EditorWindow : Window
             else if (items[index].HitTest(p))
                 cursor = Cursors.SizeAll;
         }
-        if (cursor == null && _tool == EditorTool.Select && TopmostAt(p) != null)
+        if (cursor == null && _tool is EditorTool.Select or EditorTool.Image && TopmostAt(p) != null)
             cursor = Cursors.SizeAll;
-        InputLayer.Cursor = cursor ?? (_tool switch
-        {
-            EditorTool.Select => Cursors.Arrow,
-            EditorTool.Text => Cursors.IBeam,
-            _ => Cursors.Cross,
-        });
+        InputLayer.Cursor = cursor ?? DefaultCursor();
     }
 
     private static Cursor HandleCursor(Annotation item, int handle)
     {
-        if (item is ArrowAnnotation or LineAnnotation || (item is CalloutAnnotation && handle == 8))
+        if (item is ArrowAnnotation or LineAnnotation or BraceAnnotation || (item is CalloutAnnotation && handle == 8))
             return Cursors.Hand;
         return (handle % 8) switch
         {
@@ -607,7 +822,7 @@ public partial class EditorWindow : Window
     }
 
     private Point ClampToImage(Point p) =>
-        new(Math.Clamp(p.X, 0, _source.PixelWidth), Math.Clamp(p.Y, 0, _source.PixelHeight));
+        new(Math.Clamp(p.X, 0, Image.PixelWidth), Math.Clamp(p.Y, 0, Image.PixelHeight));
 
     private static Point SquareCorner(Point origin, Point p)
     {
@@ -758,6 +973,13 @@ public partial class EditorWindow : Window
         bool shift = mods.HasFlag(ModifierKeys.Shift);
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
 
+        if (key == Key.F4 && mods == ModifierKeys.None)
+        {
+            ToggleProperties();
+            e.Handled = true;
+            return;
+        }
+
         if (ctrl)
         {
             switch (key)
@@ -766,6 +988,9 @@ public partial class EditorWindow : Window
                 case Key.Z: Undo(); break;
                 case Key.Y: Redo(); break;
                 case Key.C: CopyResult(); break;
+                case Key.V: PasteImage(); break;
+                case Key.P: PrintResult(); break;
+                case Key.Enter: CopyAndClose(); break;
                 case Key.S when shift: SaveAs(); break;
                 case Key.S: Save(); break;
                 case Key.D0: SetZoom(1); break;
@@ -793,6 +1018,9 @@ public partial class EditorWindow : Window
             Key.S => EditorTool.Spotlight,
             Key.M => EditorTool.Magnifier,
             Key.B => EditorTool.Pixelate,
+            Key.J => EditorTool.Stamp,
+            Key.G => EditorTool.Brace,
+            Key.I => EditorTool.Image,
             Key.C => EditorTool.Crop,
             _ => null,
         };
@@ -857,21 +1085,27 @@ public partial class EditorWindow : Window
     private void Undo()
     {
         CommitText();
+        var size = ImageSize;
         if (_history.Undo())
         {
             _selected = null;
             _dirty = true;
             Render();
+            if (ImageSize != size)
+                FitToWindow();
         }
     }
 
     private void Redo()
     {
+        var size = ImageSize;
         if (_history.Redo())
         {
             _selected = null;
             _dirty = true;
             Render();
+            if (ImageSize != size)
+                FitToWindow();
         }
     }
 
@@ -899,33 +1133,38 @@ public partial class EditorWindow : Window
     private void Render()
     {
         var state = _history.Current;
+        var image = state.Image;
         var display = DisplayItems();
 
+        if (!ReferenceEquals(BaseImage.Source, image))
+        {
+            BaseImage.Source = image;
+            BaseImage.Width = image.PixelWidth;
+            BaseImage.Height = image.PixelHeight;
+            foreach (var layer in new[] { AnnotationLayer, OverlayLayer, InputLayer })
+            {
+                layer.Width = image.PixelWidth;
+                layer.Height = image.PixelHeight;
+            }
+            ContentCanvas.Width = Surface.Width = image.PixelWidth;
+            ContentCanvas.Height = Surface.Height = image.PixelHeight;
+        }
+
         AnnotationLayer.Children.Clear();
-        foreach (var element in AnnotationRenderer.Scene(display, _source))
+        foreach (var element in AnnotationRenderer.Scene(display, image))
             AnnotationLayer.Children.Add(element);
 
-        var crop = state.Crop ?? new Int32Rect(0, 0, _source.PixelWidth, _source.PixelHeight);
-        Surface.Width = crop.Width;
-        Surface.Height = crop.Height;
-        ContentCanvas.Width = _source.PixelWidth;
-        ContentCanvas.Height = _source.PixelHeight;
-        CropShift.X = -crop.X;
-        CropShift.Y = -crop.Y;
-
-        RenderEffects(state.Effects, new Size(crop.Width, crop.Height));
+        RenderEffects(state.Effects, ImageSize);
         RenderOverlay(display);
 
         UndoButton.IsEnabled = _history.CanUndo;
-        RedoButton.IsEnabled = _history.CanRedo;
         string name = _filePath != null ? System.IO.Path.GetFileName(_filePath) : "nova captura";
-        Title = $"{(_dirty ? "• " : "")}{name} — Capturo";
-        StatusText.Text = $"{crop.Width} × {crop.Height} px   ·   {ToolHint(_tool)}";
+        Title = $"Editor de imagens do Capturo · {(_dirty ? "• " : "")}{name}";
+        SizeText.Text = $"{image.PixelWidth} x {image.PixelHeight}";
     }
 
     private void RenderEffects(ImageEffects effects, Size size)
     {
-        SyncEffectControls(effects);
         var outline = effects.Outline(size);
         Surface.Clip = effects.RoundedCorners || effects.Torn != TornEdges.None ? outline : null;
         BorderHost.Children.Clear();
@@ -941,16 +1180,28 @@ public partial class EditorWindow : Window
         OverlayLayer.Children.Clear();
         double unit = 1 / Math.Max(_zoom, 0.05);
 
-        if (_cropDraft is { } crop)
+        if (_areaDraft is { } area)
         {
-            OverlayLayer.Children.Add(new Path
+            var rect = new Rect(area.X, area.Y, area.Width, area.Height);
+            if (_gesture == Gesture.CutOut)
             {
-                Fill = new SolidColorBrush(Color.FromArgb(0x99, 0, 0, 0)),
-                Data = new CombinedGeometry(GeometryCombineMode.Exclude,
-                    new RectangleGeometry(new Rect(ImageSize)),
-                    new RectangleGeometry(new Rect(crop.X, crop.Y, crop.Width, crop.Height))),
-            });
-            OverlayLayer.Children.Add(DashedBox(new Rect(crop.X, crop.Y, crop.Width, crop.Height), unit));
+                // A faixa que vai sumir fica vermelha.
+                OverlayLayer.Children.Add(Positioned(new Rectangle
+                {
+                    Width = Math.Max(1, rect.Width), Height = Math.Max(1, rect.Height),
+                    Fill = new SolidColorBrush(Color.FromArgb(0x66, 0xEF, 0x44, 0x44)),
+                    Stroke = Brushes.Red, StrokeThickness = unit, StrokeDashArray = new DoubleCollection { 4, 3 },
+                }, rect.X, rect.Y));
+            }
+            else
+            {
+                OverlayLayer.Children.Add(new Path
+                {
+                    Fill = new SolidColorBrush(Color.FromArgb(0x99, 0, 0, 0)),
+                    Data = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(new Rect(ImageSize)), new RectangleGeometry(rect)),
+                });
+                OverlayLayer.Children.Add(DashedBox(rect, unit));
+            }
         }
 
         if (_selected is not { } index || index >= display.Count || _textEditor != null && _editingTemplate is TextAnnotation)
@@ -962,45 +1213,71 @@ public partial class EditorWindow : Window
         double size = 9 * unit;
         for (int i = 0; i < handles.Count; i++)
         {
-            bool round = item is ArrowAnnotation or LineAnnotation || (item is CalloutAnnotation && i == 8);
+            bool round = item is ArrowAnnotation or LineAnnotation or BraceAnnotation || (item is CalloutAnnotation && i == 8);
             Shape handle = round ? new Ellipse() : new Rectangle();
             handle.Width = handle.Height = size;
             handle.Fill = Brushes.White;
             handle.Stroke = AccentBrush;
             handle.StrokeThickness = 1.5 * unit;
-            Canvas.SetLeft(handle, handles[i].X - size / 2);
-            Canvas.SetTop(handle, handles[i].Y - size / 2);
-            OverlayLayer.Children.Add(handle);
+            OverlayLayer.Children.Add(Positioned(handle, handles[i].X - size / 2, handles[i].Y - size / 2));
         }
     }
 
-    private static Rectangle DashedBox(Rect rect, double unit)
+    private static T Positioned<T>(T element, double x, double y) where T : UIElement
     {
-        var box = new Rectangle
-        {
-            Width = Math.Max(1, rect.Width),
-            Height = Math.Max(1, rect.Height),
-            Stroke = AccentBrush,
-            StrokeThickness = 1.25 * unit,
-            StrokeDashArray = new DoubleCollection { 4, 3 },
-        };
-        Canvas.SetLeft(box, rect.X);
-        Canvas.SetTop(box, rect.Y);
-        return box;
+        Canvas.SetLeft(element, x);
+        Canvas.SetTop(element, y);
+        return element;
     }
 
-    private static string ToolHint(EditorTool tool) => tool switch
+    private static Rectangle DashedBox(Rect rect, double unit) => Positioned(new Rectangle
     {
-        EditorTool.Select => "Clique para selecionar · arraste para mover · alças redimensionam · setas do teclado ajustam · Delete apaga",
-        EditorTool.Arrow => "Arraste do início até a ponta · depois ajuste pelas alças",
-        EditorTool.Text => "Clique onde o texto começa · duplo clique num texto edita",
-        EditorTool.Callout => "Arraste a caixa do balão e digite · a alça redonda move a ponta",
-        EditorTool.Step => "Cada clique adiciona o próximo número",
-        EditorTool.Spotlight => "Arraste a área que fica clara · a opacidade controla o escuro em volta",
-        EditorTool.Magnifier => "Arraste a área a ampliar · a lente aparece ao lado e pode ser movida e redimensionada",
-        EditorTool.Pixelate => "Arraste sobre o que deve ficar ilegível",
-        EditorTool.Crop => "Arraste a área que deve ficar · Ctrl+Z desfaz o recorte",
-        _ => "Arraste para desenhar · Shift restringe a forma · o item desenhado fica editável pelas alças",
+        Width = Math.Max(1, rect.Width),
+        Height = Math.Max(1, rect.Height),
+        Stroke = AccentBrush,
+        StrokeThickness = 1.25 * unit,
+        StrokeDashArray = new DoubleCollection { 4, 3 },
+    }, rect.X, rect.Y);
+
+    private static string ToolName(EditorTool tool) => tool switch
+    {
+        EditorTool.Select => "Selecionar",
+        EditorTool.Arrow => "Seta",
+        EditorTool.Rectangle => "Retângulo",
+        EditorTool.Ellipse => "Elipse",
+        EditorTool.Line => "Linha",
+        EditorTool.Pen => "Lápis",
+        EditorTool.Highlighter => "Marca-texto",
+        EditorTool.Text => "Texto",
+        EditorTool.Callout => "Balão",
+        EditorTool.Step => "Numeração",
+        EditorTool.Spotlight => "Destaque",
+        EditorTool.Magnifier => "Lupa",
+        EditorTool.Pixelate => "Desfocar",
+        EditorTool.Stamp => "Carimbo",
+        EditorTool.Image => "Imagem",
+        EditorTool.Brace => "Chave",
+        EditorTool.Crop => "Cortar",
+        EditorTool.CutOut => "Recortar",
+        _ => tool.ToString(),
+    };
+
+    private string ToolHint(EditorTool tool) => tool switch
+    {
+        EditorTool.Select => "Clique para selecionar, arraste para mover; as alças redimensionam. Setas do teclado ajustam; Delete apaga.",
+        EditorTool.Arrow => "Arraste do início até a ponta; depois ajuste pelas alças.",
+        EditorTool.Text => "Clique onde o texto começa. Duplo clique num texto edita.",
+        EditorTool.Callout => "Arraste a caixa do balão e digite. A alça redonda move a ponta.",
+        EditorTool.Step => "Cada clique adiciona o próximo número.",
+        EditorTool.Spotlight => "Arraste a área que fica clara; a opacidade controla o escuro em volta.",
+        EditorTool.Magnifier => "Arraste a área a ampliar; a lente aparece ao lado e pode ser movida.",
+        EditorTool.Pixelate => "Arraste sobre o que deve ficar ilegível.",
+        EditorTool.Stamp => "Escolha o símbolo abaixo e clique para carimbar.",
+        EditorTool.Image => "Escolha um arquivo, ou cole uma imagem com Ctrl+V.",
+        EditorTool.Brace => "Arraste de uma ponta à outra da chave.",
+        EditorTool.Crop => "Arraste a área que deve ficar. Ctrl+Z desfaz.",
+        EditorTool.CutOut => _cutHorizontal ? "Arraste de cima para baixo a faixa que deve sumir." : "Arraste da esquerda para a direita a faixa que deve sumir.",
+        _ => "Arraste para desenhar; Shift restringe a forma. O item fica editável pelas alças.",
     };
 
     // ───────────────────────── Zoom ─────────────────────────
@@ -1008,21 +1285,23 @@ public partial class EditorWindow : Window
     /// <summary>Zoom 1 = um pixel da captura num pixel físico da tela, em qualquer escala do Windows.</summary>
     private void SetZoom(double zoom)
     {
-        _zoom = Math.Clamp(zoom, 0.05, 16);
+        _zoom = Math.Clamp(zoom, 0.05, 8);
         double dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
         ZoomTransform.ScaleX = ZoomTransform.ScaleY = _zoom / dpi;
         ZoomText.Text = $"{_zoom * 100:0}%";
+        _syncingControls = true;
+        ZoomSlider.Value = Math.Clamp(_zoom * 100, ZoomSlider.Minimum, ZoomSlider.Maximum);
+        _syncingControls = false;
         RenderOptions.SetBitmapScalingMode(BaseImage, _zoom >= 2 ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
         RenderOverlay(DisplayItems());
     }
 
     private void FitToWindow()
     {
-        var crop = _history.Current.Crop ?? new Int32Rect(0, 0, _source.PixelWidth, _source.PixelHeight);
         double dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
         double availableWidth = Math.Max(100, Scroller.ActualWidth - 100) * dpi;
         double availableHeight = Math.Max(100, Scroller.ActualHeight - 100) * dpi;
-        SetZoom(Math.Min(1, Math.Min(availableWidth / crop.Width, availableHeight / crop.Height)));
+        SetZoom(Math.Min(1, Math.Min(availableWidth / Image.PixelWidth, availableHeight / Image.PixelHeight)));
     }
 
     private void Scroller_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -1033,17 +1312,26 @@ public partial class EditorWindow : Window
         e.Handled = true;
     }
 
+    private void ZoomSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!_syncingControls && IsLoaded)
+            SetZoom(e.NewValue / 100);
+    }
+
+    private void ZoomIn_Click(object sender, RoutedEventArgs e) => SetZoom(_zoom * 1.25);
+    private void ZoomOut_Click(object sender, RoutedEventArgs e) => SetZoom(_zoom / 1.25);
+
     // ───────────────────────── Exportação ─────────────────────────
 
-    /// <summary>Imagem final: captura + anotações, recorte e efeitos (borda, sombra, cantos, rasgo).</summary>
+    /// <summary>Imagem final: captura + anotações e os efeitos (borda, sombra, cantos, rasgo).</summary>
     public BitmapSource RenderResult()
     {
         CommitText();
         var state = _history.Current;
-        int width = _source.PixelWidth, height = _source.PixelHeight;
+        int width = state.Image.PixelWidth, height = state.Image.PixelHeight;
         var canvas = new Canvas { Width = width, Height = height };
-        canvas.Children.Add(new Image { Source = _source, Width = width, Height = height, Stretch = Stretch.Fill });
-        foreach (var element in AnnotationRenderer.Scene(state.Items, _source))
+        canvas.Children.Add(new Image { Source = state.Image, Width = width, Height = height, Stretch = Stretch.Fill });
+        foreach (var element in AnnotationRenderer.Scene(state.Items, state.Image))
             canvas.Children.Add(element);
         canvas.Measure(new Size(width, height));
         canvas.Arrange(new Rect(0, 0, width, height));
@@ -1052,8 +1340,7 @@ public partial class EditorWindow : Window
         var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
         bitmap.Render(canvas);
         bitmap.Freeze();
-        BitmapSource result = state.Crop is { } crop ? BitmapUtil.Crop(bitmap, crop) : bitmap;
-        return state.Effects.Apply(result);
+        return state.Effects.Apply(bitmap);
     }
 
     private void CopyResult()
@@ -1062,16 +1349,24 @@ public partial class EditorWindow : Window
             Flash("Copiado para a área de transferência");
     }
 
+    /// <summary>Caminho do arquivo com as alterações gravadas (salva antes, se preciso).</summary>
+    private string? EnsureSaved() => (_filePath == null || _dirty) && !Save() ? null : _filePath;
+
     private bool Save()
     {
         if (_filePath == null)
             return SaveAs();
+        return SaveTo(_filePath, RenderResult());
+    }
+
+    private bool SaveTo(string path, BitmapSource image)
+    {
         try
         {
-            OutputService.Save(RenderResult(), _filePath);
+            OutputService.Save(image, path);
             _dirty = false;
             Render();
-            Flash($"Salvo em {_filePath}");
+            Flash($"Salvo em {path}");
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -1109,15 +1404,30 @@ public partial class EditorWindow : Window
             e.Cancel = true;
     }
 
-    private void Undo_Click(object sender, RoutedEventArgs e) => Undo();
-    private void Redo_Click(object sender, RoutedEventArgs e) => Redo();
-    private void Copy_Click(object sender, RoutedEventArgs e) => CopyResult();
-    private void Save_Click(object sender, RoutedEventArgs e) => Save();
     private void SaveAs_Click(object sender, RoutedEventArgs e) => SaveAs();
 
     private static T Frozen<T>(T freezable) where T : Freezable
     {
         freezable.Freeze();
         return freezable;
+    }
+}
+
+/// <summary>Barra de título escura (Windows 10 2004+ / 11), como o resto do editor.</summary>
+internal static class DarkTitleBar
+{
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+    private const int DWMWA_CAPTION_COLOR = 35;
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    public static void Apply(Window window)
+    {
+        var handle = new WindowInteropHelper(window).Handle;
+        int dark = 1;
+        DwmSetWindowAttribute(handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, sizeof(int));
+        int caption = 0x003F3C3C; // COLORREF 0x00BBGGRR: #3C3C3F
+        DwmSetWindowAttribute(handle, DWMWA_CAPTION_COLOR, ref caption, sizeof(int));
     }
 }

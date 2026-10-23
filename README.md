@@ -22,7 +22,11 @@ Linha de comando: `Capturo.exe --action CaptureRegion` (qualquer ação da lista
 
 ## Editor
 
-- **Ferramentas**: mover (V), seta (A), retângulo (R), elipse (E), linha (L), caneta (P), marca-texto (H), texto (T), balão de texto (K), passo numerado (N), **destaque** (S: escurece tudo fora da área), **lupa** (M: amplia uma área numa lente ao lado), ocultar/pixelizar (B), recortar (C).
+Mesmo arranjo do editor do Screenpresso: abre maximizado, barra de cima com botões grandes (Copiar & Sair, Salvar como, Imprimir, Propriedades, Copiar, Desfazer, Cortar, Recortar, Redimensionar, Tamanho da tela, Bordas, Publicar, com menus nas setinhas), ferramentas em círculos na coluna da esquerda, área preta e rodapé com o tamanho da imagem e o zoom. O painel de cor, tamanho e estilo abre pelo botão Propriedades (F4). Os ícones são próprios.
+
+- **Ferramentas**: seta (A), retângulo (R), texto (T), balão (K), numeração (N), **destaque** (S: escurece tudo fora da área), elipse (E), **carimbo** (J: ✔ ✖ ! ? ★ ♥ ➜ ☺), lápis (P), desfocar/ocultar (B), **inserir imagem** (I, ou Ctrl+V), **lupa** (M), **chave** (G), linha (L), marca-texto (H), selecionar (V).
+- **Imagem**: cortar (C), recortar uma faixa do meio (horizontal ou vertical), redimensionar (px ou %), tamanho da tela (margens com fundo), remover bordas uniformes. Tudo com desfazer; as anotações acompanham.
+- **Saída**: Copiar & Sair (Ctrl+Enter), imprimir (Ctrl+P), copiar como arquivo ou caminho, mostrar na pasta, abrir com outro programa.
 - **Tudo continua editável**: o item desenhado fica selecionado com alças para redimensionar; arraste para mover; setas do teclado ajustam (Shift = 10 px); duplo clique ou Enter reabre o texto; Delete apaga. Selecionar um item mostra o estilo dele na barra.
 - **Estilo**: 9 cores, tamanho, preenchimento, cantos arredondados e opacidade (no destaque, a opacidade controla o escuro em volta).
 - **Imagem**: borda liga/desliga com cor e espessura, sombra projetada, cantos arredondados e borda rasgada (embaixo, embaixo+direita ou todos os lados). A última escolha é lembrada.

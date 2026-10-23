@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Capturo.Editor;
 using Capturo.Services;
 using Xunit;
@@ -11,12 +12,32 @@ public class EditorModelTests
 {
     private static readonly Color Red = Colors.Red;
 
+    /// <summary>Imagem de teste: cada pixel tem o valor do seu índice de linha no canal verde.</summary>
+    internal static BitmapSource Image(int width, int height)
+    {
+        var pixels = new byte[width * height * 4];
+        for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
+            {
+                int i = (y * width + x) * 4;
+                pixels[i] = (byte)x;
+                pixels[i + 1] = (byte)y;
+                pixels[i + 3] = 255;
+            }
+        var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Pbgra32, null, pixels, width * 4);
+        bitmap.Freeze();
+        return bitmap;
+    }
+
+    private static EditorState Empty => EditorState.For(Image(4, 4));
+
     [Fact]
     public void History_undo_and_redo_walk_the_snapshots()
     {
-        var history = new EditorHistory();
-        var one = EditorState.Empty with { Items = ImmutableList.Create<Annotation>(new PixelateAnnotation(new Rect(0, 0, 10, 10))) };
-        var two = one with { Crop = new Int32Rect(0, 0, 5, 5) };
+        var start = Empty;
+        var history = new EditorHistory(start);
+        var one = start with { Items = ImmutableList.Create<Annotation>(new PixelateAnnotation(new Rect(0, 0, 10, 10))) };
+        var two = one with { Effects = one.Effects with { Shadow = true } };
 
         history.Push(one);
         history.Push(two);
@@ -24,15 +45,18 @@ public class EditorModelTests
         Assert.Same(one, history.Current);
         Assert.True(history.Redo());
         Assert.Same(two, history.Current);
+        history.UndoAll();
+        Assert.Same(start, history.Current);
     }
 
     [Fact]
     public void Pushing_after_undo_discards_the_redo_branch()
     {
-        var history = new EditorHistory();
-        history.Push(EditorState.Empty with { Crop = new Int32Rect(0, 0, 1, 1) });
+        var start = Empty;
+        var history = new EditorHistory(start);
+        history.Push(start with { Effects = start.Effects with { Shadow = true } });
         history.Undo();
-        history.Push(EditorState.Empty with { Crop = new Int32Rect(0, 0, 2, 2) });
+        history.Push(start with { Effects = start.Effects with { Border = true } });
 
         Assert.False(history.CanRedo);
     }
@@ -40,7 +64,7 @@ public class EditorModelTests
     [Fact]
     public void Next_step_number_follows_the_highest_existing_step()
     {
-        var state = EditorState.Empty with
+        var state = Empty with
         {
             Items = ImmutableList.Create<Annotation>(
                 new StepAnnotation(new Point(0, 0), 1, Red, 30),
@@ -48,7 +72,7 @@ public class EditorModelTests
         };
 
         Assert.Equal(5, state.NextStepNumber);
-        Assert.Equal(1, EditorState.Empty.NextStepNumber);
+        Assert.Equal(1, Empty.NextStepNumber);
     }
 
     [Fact]
