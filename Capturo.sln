@@ -1,0 +1,36 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{6F0E234B-8E65-494D-AA14-0EDEA16D9FC9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Capturo", "src\Capturo\Capturo.csproj", "{6E7CEF1A-1E9D-426A-A773-6665181D1312}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{470EA1AA-F1F7-4947-8EAF-6428E1139888}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Capturo.Tests", "tests\Capturo.Tests\Capturo.Tests.csproj", "{4022625F-BB9E-47C7-A124-1CFA91ABCB35}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6E7CEF1A-1E9D-426A-A773-6665181D1312}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6E7CEF1A-1E9D-426A-A773-6665181D1312}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6E7CEF1A-1E9D-426A-A773-6665181D1312}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6E7CEF1A-1E9D-426A-A773-6665181D1312}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4022625F-BB9E-47C7-A124-1CFA91ABCB35}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4022625F-BB9E-47C7-A124-1CFA91ABCB35}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4022625F-BB9E-47C7-A124-1CFA91ABCB35}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4022625F-BB9E-47C7-A124-1CFA91ABCB35}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{6E7CEF1A-1E9D-426A-A773-6665181D1312} = {6F0E234B-8E65-494D-AA14-0EDEA16D9FC9}
+		{4022625F-BB9E-47C7-A124-1CFA91ABCB35} = {470EA1AA-F1F7-4947-8EAF-6428E1139888}
+	EndGlobalSection
+EndGlobal

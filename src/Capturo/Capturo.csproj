@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>Capturo</AssemblyName>
+    <RootNamespace>Capturo</RootNamespace>
+    <Version>0.1.0</Version>
+    <Product>Capturo</Product>
+    <Description>Captura de tela rápida com editor de anotações.</Description>
+    <!-- O DPI per-monitor v2 vem do app.manifest, que é o caminho certo para um app WPF;
+         o aviso abaixo só se aplica a apps WinForms puros. -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+
+  <!-- WPF e WinForms juntos: evita que os usings implícitos do WinForms colidam com os tipos do WPF. -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Capturo.Tests" />
+  </ItemGroup>
+
+</Project>
